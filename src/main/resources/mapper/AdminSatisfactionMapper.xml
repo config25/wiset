@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.wiset.mapper.AdminSatisfactionMapper">
+
+  <!-- 만족도 평균 + 전월 대비 (최근 30일 vs 직전 30일) -->
+  <select id="summary" resultType="java.util.LinkedHashMap">
+    SELECT
+      ROUND(AVG(rating), 2)                                        AS avgAll,
+      COUNT(*)                                                     AS totalRatings,
+      (SELECT COUNT(*) FROM sys_ai_report_survey WHERE opinion IS NOT NULL) AS totalFeedback,
+      AVG(CASE WHEN surveyed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN rating END) AS curAvg,
+      AVG(CASE WHEN surveyed_at &lt; DATE_SUB(NOW(), INTERVAL 30 DAY)
+               AND surveyed_at &gt;= DATE_SUB(NOW(), INTERVAL 60 DAY) THEN rating END) AS prevAvg
+    FROM sys_ai_report_survey
+    WHERE rating IS NOT NULL
+  </select>
+
+  <!-- 감성 분포 -->
+  <select id="sentimentCounts" resultType="java.util.LinkedHashMap">
+    SELECT sentiment, COUNT(*) AS cnt
+    FROM sys_ai_report_survey
+    WHERE sentiment IS NOT NULL
+    GROUP BY sentiment
+  </select>
+
+  <!-- 주별 만족도 (최근 7주) -->
+  <select id="weeklySatisfaction" resultType="java.util.LinkedHashMap">
+    SELECT YEARWEEK(surveyed_at, 3)                       AS wk,
+           CONCAT('W', LPAD(WEEK(MAX(surveyed_at), 3), 2, '0')) AS lbl,
+           ROUND(AVG(rating), 3)                          AS avgRating
+    FROM sys_ai_report_survey
+    WHERE rating IS NOT NULL
+      AND surveyed_at >= DATE_SUB(CURDATE(), INTERVAL 49 DAY)
+    GROUP BY wk
+    ORDER BY wk
+  </select>
+
+  <!-- 주별 행동(클릭/뷰) -->
+  <select id="weeklyAction" resultType="java.util.LinkedHashMap">
+    SELECT YEARWEEK(created_at, 3)                        AS wk,
+           CONCAT('W', LPAD(WEEK(MAX(created_at), 3), 2, '0')) AS lbl,
+           SUM(action_type = 'click')                     AS clicks,
+           SUM(action_type = 'view')                      AS views
+    FROM sys_user_activity_log
+    WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 49 DAY)
+    GROUP BY wk
+    ORDER BY wk
+  </select>
+
+  <!-- 불만 요소 TOP5 -->
+  <select id="complaintsTop5" resultType="java.util.LinkedHashMap">
+    SELECT complaint_category AS category, COUNT(*) AS cnt
+    FROM sys_ai_report_survey
+    WHERE sentiment = 'NEGATIVE' AND complaint_category IS NOT NULL
+    GROUP BY complaint_category
+    ORDER BY cnt DESC
+    LIMIT 5
+  </select>
+
+  <!-- 최근 피드백 (의견 작성분) -->
+  <select id="recentFeedback" resultType="java.util.LinkedHashMap">
+    SELECT DATE_FORMAT(s.surveyed_at, '%m.%d %H:%i') AS t,
+           p.persona_code                            AS personaCode,
+           s.rating                                  AS rating,
+           s.opinion                                 AS opinion,
+           s.sentiment                               AS sentiment
+    FROM sys_ai_report_survey s
+    JOIN sys_user_profile p ON p.user_id = s.user_id
+    WHERE s.opinion IS NOT NULL
+    ORDER BY s.surveyed_at DESC, s.survey_id DESC
+    LIMIT 8
+  </select>
+
+  <!-- 만족도 평가 내역 (리포트 제출 단위로 4문항 집계) -->
+  <select id="evalHistory" resultType="java.util.LinkedHashMap">
+    SELECT DATE_FORMAT(MAX(surveyed_at), '%m.%d %H:%i')      AS t,
+           CONCAT('RPT-', report_id)                         AS reportId,
+           MAX(CASE WHEN question_no = 1 THEN rating END)    AS star,
+           ROUND(AVG(rating), 2)                             AS avg4,
+           MAX(opinion IS NOT NULL)                          AS hasOpinion
+    FROM sys_ai_report_survey
+    WHERE report_id IS NOT NULL
+    GROUP BY report_id
+    ORDER BY MAX(surveyed_at) DESC
+    LIMIT 8
+  </select>
+
+  <!-- 행동 로그 상세 -->
+  <select id="activityLog" resultType="java.util.LinkedHashMap">
+    SELECT DATE_FORMAT(created_at, '%H:%i:%s')        AS tm,
+           CONCAT('usr_', user_id)                    AS usr,
+           action_type                                AS actionType,
+           COALESCE(action_value, target_type)        AS detail
+    FROM sys_user_activity_log
+    ORDER BY created_at DESC, activity_log_id DESC
+    LIMIT 12
+  </select>
+
+</mapper>

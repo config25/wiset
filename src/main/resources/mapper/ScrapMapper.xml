@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.wiset.mapper.ScrapMapper">
+
+  <!-- 개인 스크랩(TN_INDVDL_PBLANC_SCRAP) + 공고(TN_EMPMN_PBLANC) + 기관(TN_INSTT_INFO)
+       + 타깃지정 델타(sys_user_job_scrap) 조인. meta = 회사 · 고용형태 · 지역 -->
+  <select id="listScraps" resultType="com.example.wiset.dto.ScrapDto">
+    SELECT
+      s.PBLANC_SN AS id,
+      COALESCE(p.PBLANC_NM, s.PBLANC_NM) AS title,
+      CONCAT_WS(' · ', i.INSTT_NM, NULLIF(p.EMPLYM_STLE, ''), NULLIF(p.ADRES, '')) AS meta,
+      DATE_FORMAT(s.RGSDE, '%Y.%m.%d') AS `date`,
+      COALESCE(t.is_target, 0) AS isTarget
+    FROM TN_INDVDL_PBLANC_SCRAP s
+    LEFT JOIN TN_EMPMN_PBLANC p ON p.PBLANC_SN = s.PBLANC_SN
+    LEFT JOIN TN_INSTT_INFO   i ON i.USER_SN   = s.INSTT_USER_SN
+    LEFT JOIN sys_user_job_scrap t
+           ON t.indvdl_user_sn = s.INDVDL_USER_SN
+          AND t.instt_user_sn  = s.INSTT_USER_SN
+          AND t.pblanc_sn      = s.PBLANC_SN
+    WHERE s.INDVDL_USER_SN = #{userSn}
+    ORDER BY s.RGSDE DESC, s.PBLANC_SN
+  </select>
+
+  <!-- 희망 근무지(복수) — 칩 라벨 형태로 반환. 전국/해외는 시도만, 그 외 '시도 시군구'. -->
+  <select id="listDesiredRegions" resultType="java.lang.String">
+    SELECT CASE WHEN sido IN ('전국', '해외') THEN sido
+                ELSE CONCAT(sido, ' ', COALESCE(sigungu, '전체')) END
+    FROM sys_user_desired_region
+    WHERE user_id = #{userSn}
+    ORDER BY region_id
+  </select>
+
+  <!-- 희망 업종명 (코드 → 표시명). 미저장이면 행 없음 → null -->
+  <select id="findDesiredIndustry" resultType="java.lang.String">
+    SELECT ct.name
+    FROM sys_user_profile p
+    JOIN sys_common_type ct ON ct.group_code = 'INDUSTRY' AND ct.code = CAST(p.desired_industry_code AS CHAR)
+    WHERE p.user_id = #{userSn}
+  </select>
+
+  <!-- 희망 직무명 (코드 → 표시명) -->
+  <select id="findDesiredJob" resultType="java.lang.String">
+    SELECT ct.name
+    FROM sys_user_profile p
+    JOIN sys_common_type ct ON ct.group_code = 'JOB' AND ct.code = CAST(p.desired_job_code AS CHAR)
+    WHERE p.user_id = #{userSn}
+  </select>
+
+  <!-- 희망 고용형태(복수) 명 -->
+  <select id="listDesiredEmployment" resultType="java.lang.String">
+    SELECT ct.name
+    FROM sys_user_type ut
+    JOIN sys_common_type ct ON ct.common_id = ut.type_id
+    WHERE ut.user_id = #{userSn} AND ct.group_code = 'EMPLOYMENT_TYPE'
+    ORDER BY ut.common_id
+  </select>
+
+  <!-- 최신 세부 고민 자유서술 -->
+  <select id="findLatestConcern" resultType="java.lang.String">
+    SELECT content FROM sys_user_concern
+    WHERE user_id = #{userSn} AND content IS NOT NULL AND content &lt;&gt; ''
+    ORDER BY concern_id DESC LIMIT 1
+  </select>
+
+  <!-- 스크랩한 공고 수 (리포트 헤더 캡션용) -->
+  <select id="countScraps" resultType="int">
+    SELECT COUNT(*) FROM TN_INDVDL_PBLANC_SCRAP WHERE INDVDL_USER_SN = #{userSn}
+  </select>
+
+</mapper>

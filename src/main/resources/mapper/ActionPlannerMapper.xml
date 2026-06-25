@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.wiset.mapper.ActionPlannerMapper">
+
+  <select id="listItems" resultType="com.example.wiset.dto.ActionPlannerItemDto">
+    SELECT
+      p.planner_id              AS plannerId,
+      COALESCE(p.custom_title, r.title) AS title,
+      p.source_type_code        AS source,
+      p.term_code               AS term,
+      p.status_code             AS status
+    FROM sys_action_planner p
+    LEFT JOIN sys_resource r ON r.resource_id = p.resource_id
+    WHERE p.user_id = #{userSn}
+    ORDER BY p.planner_id
+  </select>
+
+  <!-- 담기 귀속용: 가장 최근 진단(competency_id). 없으면 null → diagnosis_id NULL 유지 -->
+  <select id="findLatestDiagnosisId" resultType="java.lang.Long">
+    SELECT competency_id FROM sys_competency_diagnosis
+    WHERE user_id = #{userSn}
+    ORDER BY created_at DESC, competency_id DESC
+    LIMIT 1
+  </select>
+
+  <insert id="insertItem">
+    INSERT INTO sys_action_planner (user_id, diagnosis_id, resource_id, custom_title, source_type_code, term_code, status_code)
+    VALUES (#{userSn}, #{diagnosisId}, #{req.resourceId}, #{req.customTitle}, #{req.source}, #{req.term}, 'TODO')
+  </insert>
+
+  <update id="updateStatus">
+    UPDATE sys_action_planner SET status_code = #{status} WHERE planner_id = #{plannerId}
+  </update>
+
+  <delete id="deleteItem">
+    DELETE FROM sys_action_planner WHERE planner_id = #{plannerId}
+  </delete>
+
+  <select id="listRecommendations" resultType="com.example.wiset.dto.RecommendationDto">
+    SELECT
+      resource_id        AS resourceId,
+      resource_type_code AS type,
+      title, content,
+      organization_name  AS org,
+      location,
+      salary_min         AS salaryMin,
+      salary_max         AS salaryMax,
+      source_type_code   AS sourceType
+    FROM sys_resource
+    ORDER BY resource_id
+  </select>
+
+</mapper>

@@ -1,0 +1,23 @@
+<%@ page pageEncoding="UTF-8" %>
+<%-- 공통 헤더 (GNB). active 속성은 요청 속성 ${activeNav}로 제어 --%>
+<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<header class="wb-header">
+  <div class="wb-header-inner">
+    <div class="wb-logo"><span class="wb-logo-dot"></span>W브릿지</div>
+    <nav class="wb-gnb">
+      <div class="wb-gnb-item ${activeNav eq 'job' ? 'active' : ''}"><span class="wb-ai-tag">AI</span>취업·채용</div>
+      <div class="wb-gnb-item ${activeNav eq 'edu' ? 'active' : ''}">교육</div>
+      <div class="wb-gnb-item ${activeNav eq 'research' ? 'active' : ''}">일자리·연구</div>
+      <div class="wb-gnb-item ${activeNav eq 'mentor' ? 'active' : ''}">멘토링</div>
+      <div class="wb-gnb-item ${activeNav eq 'consult' ? 'active' : ''}">진단·컨설팅</div>
+      <div class="wb-gnb-item ${activeNav eq 'career' ? 'active' : ''}">진로·커리어</div>
+    </nav>
+    <div class="wb-user-menu">
+      <%-- TODO(통합): 사용자 이름 하드코딩(더미). tn_user_info/sys_user_profile엔 이름 컬럼 없음.
+           실명은 기존 프로젝트의 "구직자정보/교육신청인" 테이블에 존재 → W브릿지 인증 통합
+           (CurrentUser 세션화) 시점에 함께 연동. 그 전엔 보류. --%>
+      <span><span class="name">김지수</span> 님</span>
+      <div class="wb-avatar">김</div>
+    </div>
+  </div>
+</header>

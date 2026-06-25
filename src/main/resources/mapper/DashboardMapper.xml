@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.wiset.mapper.DashboardMapper">
+
+  <select id="listDiagnoses" resultType="com.example.wiset.dto.DiagnosisRow">
+    SELECT
+      DATE_FORMAT(created_at, '%Y.%m.%d') AS date,
+      DATE_FORMAT(created_at, '%Y.%m')    AS ym,
+      total_score           AS totalScore,
+      diagnosis_type        AS diagnosisType,
+      version_code          AS versionCode,
+      desired_job           AS desiredJob,
+      cohort_size           AS cohortSize,
+      cohort_percentile     AS cohortPercentile,
+      professionalism_score AS professionalism,
+      digital_score         AS digital,
+      leadership_score      AS leadership,
+      problem_solving_score AS problemSolving,
+      communication_score   AS communication
+    FROM sys_competency_diagnosis
+    WHERE user_id = #{userSn}
+    ORDER BY created_at
+  </select>
+
+  <select id="listPlanner" resultType="com.example.wiset.dto.PlannerRow">
+    SELECT
+      COALESCE(p.custom_title, r.title) AS title,
+      p.source_type_code AS source,
+      p.term_code        AS term,
+      p.status_code      AS status
+    FROM sys_action_planner p
+    LEFT JOIN sys_resource r ON r.resource_id = p.resource_id
+    WHERE p.user_id = #{userSn}
+    ORDER BY p.planner_id
+  </select>
+
+  <select id="getCurrentStatus" resultType="java.lang.String">
+    SELECT current_status FROM sys_user_profile WHERE user_id = #{userSn}
+  </select>
+
+  <!-- 프로필 헤더: 계정/구직자정보(TN_INDVDL_INFO) + 페르소나(sys_user_profile)
+       + 최종학력(TN_RESUME_ACDMCR, 학위 높은 순) + 현직(TN_RESUME_CAREER, 재직중=종료일 NULL).
+       학력/경력은 사용자가 여러 행을 가질 수 있어 스칼라 서브쿼리로 정확히 1행만 선택. 조회 전용.
+       최종학력 = 학위코드 있는 행 우선·코드 내림차순(석사>학사…), 현직 = 재직중 중 최근 입사. -->
+  <select id="getProfileHeader" resultType="com.example.wiset.dto.ProfileHeaderRow">
+    SELECT
+      i.USER_NM AS userNm,
+      i.EMAIL   AS email,
+      i.MBTLNUM AS mbtlnum,
+      i.BRTHDY  AS brthdy,
+      p.persona_code AS personaCode,
+      (SELECT a.MAJOR_NM FROM TN_RESUME_ACDMCR a JOIN TN_RESUME r ON r.RESUME_SN = a.RESUME_SN
+        WHERE r.USER_SN = i.USER_SN
+        ORDER BY (a.LAST_DGRI_SE_CODE IS NULL), a.LAST_DGRI_SE_CODE DESC, a.ACDMCR_SN DESC LIMIT 1) AS majorNm,
+      (SELECT a.LAST_DGRI_SE_CODE FROM TN_RESUME_ACDMCR a JOIN TN_RESUME r ON r.RESUME_SN = a.RESUME_SN
+        WHERE r.USER_SN = i.USER_SN
+        ORDER BY (a.LAST_DGRI_SE_CODE IS NULL), a.LAST_DGRI_SE_CODE DESC, a.ACDMCR_SN DESC LIMIT 1) AS degreeCode,
+      (SELECT c.CLSF_NM FROM TN_RESUME_CAREER c JOIN TN_RESUME r ON r.RESUME_SN = c.RESUME_SN
+        WHERE r.USER_SN = i.USER_SN AND (c.CAREER_END_DE IS NULL OR c.CAREER_END_DE = '')
+        ORDER BY c.CAREER_BEGIN_DE DESC, c.CAREER_SN DESC LIMIT 1) AS careerTitle,
+      (SELECT c.CAREER_BEGIN_DE FROM TN_RESUME_CAREER c JOIN TN_RESUME r ON r.RESUME_SN = c.RESUME_SN
+        WHERE r.USER_SN = i.USER_SN AND (c.CAREER_END_DE IS NULL OR c.CAREER_END_DE = '')
+        ORDER BY c.CAREER_BEGIN_DE DESC, c.CAREER_SN DESC LIMIT 1) AS careerBeginDe
+    FROM TN_INDVDL_INFO i
+    LEFT JOIN sys_user_profile p ON p.user_id = i.USER_SN
+    WHERE i.USER_SN = #{userSn}
+    LIMIT 1
+  </select>
+
+  <select id="listHistory" resultType="com.example.wiset.dto.HistoryRow">
+    SELECT
+      d.competency_id    AS diagnosisId,
+      DATE_FORMAT(d.created_at, '%Y.%m.%d') AS date,
+      DATE_FORMAT(d.created_at, '%H:%i')    AS time,
+      CONCAT('CCH-', DATE_FORMAT(d.created_at, '%y%m%d'), LPAD(d.competency_id, 2, '0')) AS code,
+      d.version_code     AS versionCode,
+      d.diagnosis_type   AS diagnosisType,
+      d.desired_job      AS desiredJob,
+      d.concern_summary  AS concernSummary,
+      d.total_score      AS totalScore,
+      d.persona_code     AS personaCode,
+      (SELECT COUNT(*) FROM sys_action_planner ap WHERE ap.diagnosis_id = d.competency_id) AS actions,
+      (SELECT AVG(sv.rating) FROM sys_ai_report_survey sv
+         JOIN sys_ai_report ar ON ar.report_id = sv.report_id
+        WHERE ar.diagnosis_id = d.competency_id) AS satisfaction
+    FROM sys_competency_diagnosis d
+    WHERE d.user_id = #{userSn}
+    ORDER BY d.created_at DESC
+  </select>
+
+</mapper>

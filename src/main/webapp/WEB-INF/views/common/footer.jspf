@@ -1,0 +1,16 @@
+<%@ page pageEncoding="UTF-8" %>
+<%-- 공통 푸터 --%>
+<footer class="wb-footer">
+  <div class="ft-row">
+    <div>
+      <div style="color:#fff; font-weight:700; margin-bottom:8px;">W브릿지 · 한국여성과학기술인육성재단</div>
+      <div>
+        <a>이용약관</a><a>개인정보처리방침</a><a>고객센터</a><a>사이트맵</a>
+      </div>
+    </div>
+    <div style="text-align:right; color:#9AA0AA;">
+      © 2026 WISET. All rights reserved.<br/>
+      대전광역시 유성구 가정북로 76 · 대표번호 042-000-0000
+    </div>
+  </div>
+</footer>

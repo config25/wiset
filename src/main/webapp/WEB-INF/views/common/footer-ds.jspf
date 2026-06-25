@@ -1,0 +1,27 @@
+<%@ page pageEncoding="UTF-8" %>
+<%-- 신규 디자인 시스템 공통 푸터 (WISET) --%>
+<%@ taglib prefix="wb" tagdir="/WEB-INF/tags" %>
+<footer class="wb-footer">
+  <div class="wb-footer-inner">
+    <div class="wb-foot-left">
+      <div class="wb-wiset-word">WISET</div>
+      <div class="wb-wiset-sub">한국여성과학기술인육성재단</div>
+      <div class="wb-wiset-go"><wb:icon-ds name="home" size="13" color="#6B7078" /> WISET 바로가기 ≫</div>
+    </div>
+    <div class="wb-foot-right">
+      <div class="wb-foot-desc">
+        한국여성과학기술인육성재단(WISET)은 &lt;여성과학기술인 육성 및 지원에 관한 법률&gt;에 따라 설립된 <b>여성과학기술인 종합 지원 기관</b>입니다.<br/>
+        과학기술정보통신부 소관 공공기관으로, <b>'복권기금'</b>과 <b>'과학기술진흥기금'</b>으로 운영되고 있습니다.
+      </div>
+      <div class="wb-foot-links">
+        <a>이용약관</a><span class="bar">|</span><a>개인정보처리방침</a><span class="bar">|</span>
+        <a>이메일주소 집단수집 거부</a><span class="bar">|</span><a>사이트 맵</a>
+      </div>
+      <div class="wb-foot-meta">
+        06130 서울특별시 강남구 테헤란로7길 22, 한국과학기술회관 2관 6층&nbsp;&nbsp;Tel. 02.6411.1000&nbsp;&nbsp;Fax. 02.6411.1001&nbsp;&nbsp;E-mail: wiset@wiset.or.kr<br/>
+        사업자등록번호: 110-82-16902&nbsp;&nbsp;직업정보제공사업 신고번호: J1200320140014
+      </div>
+      <div class="wb-foot-copy">COPYRIGHT 2021 W-BRIDGE. ALL RIGHTS RESERVED.</div>
+    </div>
+  </div>
+</footer>

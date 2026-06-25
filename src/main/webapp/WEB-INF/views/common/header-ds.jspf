@@ -1,0 +1,23 @@
+<%@ page pageEncoding="UTF-8" %>
+<%-- 신규 디자인 시스템 공통 헤더 (WISET 포털 GNB). active 는 요청 속성 ${activeNav} 로 제어 --%>
+<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<%@ taglib prefix="wb" tagdir="/WEB-INF/tags" %>
+<header class="wb-header">
+  <div class="wb-header-inner">
+    <div class="wb-logo"><span class="wb-logo-word">W브릿지</span></div>
+    <nav class="wb-nav">
+      <div class="wb-nav-item ${activeNav eq 'job' ? 'active' : ''}"><span class="wb-ai-bubble">AI</span>취업·채용</div>
+      <div class="wb-nav-item ${activeNav eq 'edu' ? 'active' : ''}">교육</div>
+      <div class="wb-nav-item ${activeNav eq 'research' ? 'active' : ''}">일자리·연구</div>
+      <div class="wb-nav-item ${activeNav eq 'mentor' ? 'active' : ''}">멘토링</div>
+      <div class="wb-nav-item ${activeNav eq 'consult' ? 'active' : ''}">진단·컨설팅</div>
+      <div class="wb-nav-item ${activeNav eq 'career' ? 'active' : ''}">진로·커리어</div>
+    </nav>
+    <div class="wb-util">
+      <a><wb:icon-ds name="user" size="14" color="#54585F" /> 로그인 / 회원가입</a>
+      <a>W브릿지 소개</a><a>공지사항</a><a>FAQ</a>
+      <a class="wb-ent-pill">기업서비스 ≫</a>
+      <span class="wb-hamburger"><span></span><span></span><span></span></span>
+    </div>
+  </div>
+</header>
