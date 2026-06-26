@@ -35,16 +35,25 @@ public class WisetAiClient {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    public GenerateResponse generate(GenerateRequest req) {
+    /**
+     * 전용 엔드포인트로 POST (path = "/api/consulting" | "/api/competency-eval" | "/api/market-fit").
+     */
+    public GenerateResponse generate(String path, GenerateRequest req) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        log.info("[AI호출] type={} → POST {}/api/generate (maxTokens={})", req.getType(), baseUrl, req.getMaxNewTokens());
+        log.info("[AI호출] POST {}{} (maxTokens={})", baseUrl, path, req.getMaxNewTokens());
         long t0 = System.currentTimeMillis();
-        GenerateResponse resp = rt.exchange(baseUrl + "/api/generate", HttpMethod.POST,
+        GenerateResponse resp = rt.exchange(baseUrl + path, HttpMethod.POST,
                 new HttpEntity<>(req, headers), GenerateResponse.class).getBody();
         int chars = (resp != null && resp.getResponse() != null) ? resp.getResponse().length() : 0;
-        log.info("[AI호출] type={} 완료 — {}자, 서버 {}s, 왕복 {}ms", req.getType(), chars,
+        log.info("[AI호출] {} 완료 — {}자, 서버 {}s, 왕복 {}ms", path, chars,
                 resp == null ? null : resp.getElapsedSeconds(), System.currentTimeMillis() - t0);
+        // 응답 원문 로깅(답변 형식 확인용 — 역량 JSON·근거·시장정합도 구조 파악). 길면 8000자에서 절단.
+        if (resp != null && resp.getResponse() != null) {
+            String body = resp.getResponse();
+            log.info("[AI응답원문 {}]\n{}", path,
+                    body.length() > 8000 ? body.substring(0, 8000) + "…(이하 생략, 총 " + body.length() + "자)" : body);
+        }
         return resp;
     }
 }

@@ -70,9 +70,9 @@ public class ReportGenerationServiceImpl {
         log.info("[리포트생성] AI 병렬 호출 시작 (type0 컨설팅 + type1 역량평가)");
         long t0 = System.currentTimeMillis();
         CompletableFuture<GenerateResponse> coachingF =
-                CompletableFuture.supplyAsync(safe(() -> ai.generate(consultingReq), "type0/consulting"), exec);
+                CompletableFuture.supplyAsync(safe(() -> ai.generate("/api/consulting", consultingReq), "consulting"), exec);
         CompletableFuture<GenerateResponse> evalF =
-                CompletableFuture.supplyAsync(safe(() -> ai.generate(evalReq), "type1/competency-eval"), exec);
+                CompletableFuture.supplyAsync(safe(() -> ai.generate("/api/competency-eval", evalReq), "competency-eval"), exec);
         CompletableFuture.allOf(coachingF, evalF).join();
         long elapsedMs = System.currentTimeMillis() - t0;
 
