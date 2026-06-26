@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  17_관리자 통합 대시보드 (조회 전용) — wbridge 드롭인 idiom.
+    파일/네임스페이스: sqlmap/mngr/adminDashboard_mapper.xml + namespace="mngr.adminDashboard"
+    호출: CommonDAO 문자열쿼리ID + (전부 무파라미터).
+    ※ SQL 은 MySQL 방언(불리언 SUM·CURDATE·DATE_FORMAT·LPAD·LIMIT). DB 는 예외영역 → Tibero 전환 시 보강.
+-->
+<mapper namespace="mngr.adminDashboard">
+
+  <!-- 누적 진단 + 오늘 진단 시작 (가벼운 카운트만) -->
+  <select id="realtimeKpi" resultType="java.util.LinkedHashMap">
+    SELECT
+      (SELECT COUNT(*) FROM sys_competency_diagnosis)                       AS cumulative,
+      (SELECT COUNT(*) FROM sys_diagnosis_session
+         WHERE DATE(started_at) = CURDATE())                               AS todayStarted
+  </select>
+
+  <!-- 페르소나별 유입 -->
+  <select id="personaInflow" resultType="java.util.LinkedHashMap">
+    SELECT persona_code AS personaCode, COUNT(*) AS cnt
+    FROM sys_user_profile
+    WHERE persona_code IS NOT NULL
+    GROUP BY persona_code
+    ORDER BY persona_code
+  </select>
+
+  <!-- 단계 도달 누적 인원 (current_step / 완료를 단계 서수로 환산) -->
+  <select id="funnelCounts" resultType="java.util.LinkedHashMap">
+    SELECT
+      SUM(ord >= 1) AS s1, SUM(ord >= 2) AS s2, SUM(ord >= 3) AS s3,
+      SUM(ord >= 4) AS s4, SUM(ord >= 5) AS s5, SUM(ord >= 6) AS s6
+    FROM (
+      SELECT CASE
+        WHEN status = 'COMPLETED'   THEN 6
+        WHEN current_step = 'step6' THEN 6
+        WHEN current_step = 'step5' THEN 5
+        WHEN current_step = 'step4' THEN 4
+        WHEN current_step = 'step3' THEN 3
+        WHEN current_step = 'step2' THEN 2
+        ELSE 1 END AS ord
+      FROM sys_diagnosis_session
+    ) t
+  </select>
+
+  <!-- 좋아요/싫어요 = 만족도 별점 ≥4.0 / ≤2.0 (3.0은 중립으로 제외) -->
+  <select id="thumbs" resultType="java.util.LinkedHashMap">
+    SELECT
+      SUM(rating &gt;= 4) AS up,
+      SUM(rating &lt;= 2) AS down
+    FROM sys_ai_report_survey
+    WHERE rating IS NOT NULL
+  </select>
+
+  <!-- 답변 품질 지표 평균 (자동 평가) -->
+  <select id="quality" resultType="java.util.LinkedHashMap">
+    SELECT
+      AVG(faithfulness_score)   AS faithfulness,
+      AVG(accuracy_score)       AS accuracy,
+      AVG(job_reflection_score) AS jobReflection,
+      AVG(relevance_score)      AS relevance
+    FROM sys_ai_report_quality
+  </select>
+
+  <!-- 별점 분포 -->
+  <select id="ratingDist" resultType="java.util.LinkedHashMap">
+    SELECT rating, COUNT(*) AS cnt
+    FROM sys_ai_report_survey
+    WHERE rating IS NOT NULL
+    GROUP BY rating
+  </select>
+
+  <!-- 최근 배치 -->
+  <select id="recentBatches" resultType="java.util.LinkedHashMap">
+    SELECT
+      CONCAT('BATCH-', DATE_FORMAT(executed_at, '%y%j'), '-', LPAD(batch_id, 3, '0')) AS id,
+      batch_type                              AS type,
+      DATE_FORMAT(executed_at, '%H:%i')       AS ts,
+      processed_count                         AS cnt,
+      duration_seconds                        AS dur,
+      status                                  AS status
+    FROM sys_batch_history
+    ORDER BY executed_at DESC
+    LIMIT 5
+  </select>
+
+</mapper>

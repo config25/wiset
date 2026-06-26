@@ -3,7 +3,6 @@ package com.example.wiset.dto.ai;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-import lombok.Data;
 
 /**
  * POST /api/generate 요청 (Qwen Fine-tuned 서버, 단일 엔드포인트).
@@ -11,7 +10,6 @@ import lombok.Data;
  *   type1 : 역량 평가(0~3점 JSON)        → targetRole / resumeText
  *   null  : 범용                          → systemPrompt / userPrompt
  */
-@Data
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class GenerateRequest {
@@ -47,4 +45,37 @@ public class GenerateRequest {
         r.maxNewTokens = 512;
         return r;
     }
+
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+
+    public String getSystemPrompt() { return systemPrompt; }
+    public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }
+
+    public String getUserPrompt() { return userPrompt; }
+    public void setUserPrompt(String userPrompt) { this.userPrompt = userPrompt; }
+
+    public String getTargetRole() { return targetRole; }
+    public void setTargetRole(String targetRole) { this.targetRole = targetRole; }
+
+    public String getResumeText() { return resumeText; }
+    public void setResumeText(String resumeText) { this.resumeText = resumeText; }
+
+    public String getUserProfile() { return userProfile; }
+    public void setUserProfile(String userProfile) { this.userProfile = userProfile; }
+
+    public String getUnstructuredData() { return unstructuredData; }
+    public void setUnstructuredData(String unstructuredData) { this.unstructuredData = unstructuredData; }
+
+    public String getConsultingLog() { return consultingLog; }
+    public void setConsultingLog(String consultingLog) { this.consultingLog = consultingLog; }
+
+    public Integer getMaxNewTokens() { return maxNewTokens; }
+    public void setMaxNewTokens(Integer maxNewTokens) { this.maxNewTokens = maxNewTokens; }
+
+    public Double getTemperature() { return temperature; }
+    public void setTemperature(Double temperature) { this.temperature = temperature; }
+
+    public Double getTopP() { return topP; }
+    public void setTopP(Double topP) { this.topP = topP; }
 }

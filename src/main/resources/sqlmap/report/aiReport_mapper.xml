@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="report.aiReport">
+
+  <!-- 리포트 본문(JSON 또는 TEXT). 탭(report_type) 구분, diagnosisId 지정 시 해당 진단의 리포트. -->
+  <select id="findContent" resultType="string">
+    SELECT content
+    FROM sys_ai_report
+    WHERE user_id = #{userSn} AND report_type = #{reportType}
+    <if test="diagnosisId != null">AND diagnosis_id = #{diagnosisId}</if>
+    ORDER BY created_at DESC, report_id DESC
+    LIMIT 1
+  </select>
+
+  <!-- 리포트 1행(제목/부제목/키워드/본문) — 코칭 화면 렌더용. -->
+  <select id="findReport" resultType="java.util.LinkedHashMap">
+    SELECT banner_title AS bannerTitle,
+           subtitle,
+           keywords,
+           content
+    FROM sys_ai_report
+    WHERE user_id = #{userSn} AND report_type = #{reportType}
+    <if test="diagnosisId != null">AND diagnosis_id = #{diagnosisId}</if>
+    ORDER BY created_at DESC, report_id DESC
+    LIMIT 1
+  </select>
+
+</mapper>

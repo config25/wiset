@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  20_관리자 리포트 관리 (조회 전용) — wbridge 드롭인 idiom.
+    · 파일/네임스페이스 규칙: sqlmap/<area>/<name>_mapper.xml  +  namespace="mngr.<name>"
+      → wbridge 의 mapperLocations(classpath:sqlmap/**/*_mapper.xml) 에 그대로 잡힘.
+    · 호출은 CommonDAO 문자열쿼리ID("mngr.adminReports.kpi" 등) + Map 파라미터.
+    · @Param 바인딩을 Map 키로 대체(#{search}/#{offset}/#{limit} 등은 동일하게 동작).
+    ※ SQL 은 MySQL 방언(DATE/CURDATE/DATE_SUB/LIMIT…OFFSET). DB 는 "맞출 수 없는 영역" 예외로
+      Tibero 전환 시 보강(TODO 아래). wiset(MariaDB/MySQL)에서는 그대로 실행됨.
+-->
+<mapper namespace="mngr.adminReports">
+
+  <!-- 상단 KPI: total / today / avgSatisfaction / rediagnosis (전체 기준, 필터 무관) -->
+  <select id="kpi" resultType="java.util.LinkedHashMap">
+    /* mngr.adminReports.kpi */
+    SELECT
+      (SELECT COUNT(*) FROM sys_ai_report)                                  AS total,
+      (SELECT COUNT(*) FROM sys_ai_report WHERE DATE(created_at) = CURDATE()) AS today,
+      (SELECT ROUND(AVG(rating), 2) FROM sys_ai_report_survey)              AS avgSatisfaction,
+      (SELECT COUNT(*) - COUNT(DISTINCT user_id)
+         FROM sys_competency_diagnosis)                                     AS rediagnosis
+  </select>
+
+  <!-- 공통 FROM + 필터 (목록/카운트 공유) -->
+  <sql id="repFrom">
+    FROM sys_ai_report r
+    LEFT JOIN sys_competency_diagnosis d ON d.competency_id = r.diagnosis_id
+    LEFT JOIN (SELECT report_id, AVG(rating) AS avgr
+               FROM sys_ai_report_survey GROUP BY report_id) sv ON sv.report_id = r.report_id
+    <where>
+      <if test="search != null and search != ''">
+        AND (CONCAT('RPT-', r.report_id) LIKE CONCAT('%', #{search}, '%')
+             OR CONCAT('usr_', r.user_id) LIKE CONCAT('%', #{search}, '%')
+             OR d.desired_job LIKE CONCAT('%', #{search}, '%'))
+      </if>
+      <if test="personaGroup == '취업희망'"> AND d.persona_code IN (1, 2, 3) </if>
+      <if test="personaGroup == '경력성장'"> AND d.persona_code = 4 </if>
+      <if test="sat == 'gte4'"> AND sv.avgr &gt;= 4 </if>
+      <if test="sat == '3to4'"> AND sv.avgr &gt;= 3 AND sv.avgr &lt; 4 </if>
+      <if test="sat == 'lt3'"> AND sv.avgr &lt; 3 </if>
+      <if test="days != null"> AND r.created_at &gt;= DATE_SUB(NOW(), INTERVAL #{days} DAY) </if>
+    </where>
+  </sql>
+
+  <!-- 리포트 목록 -->
+  <select id="list" resultType="java.util.LinkedHashMap">
+    /* mngr.adminReports.list */
+    SELECT CONCAT('RPT-', r.report_id)               AS reportId,
+           CONCAT('usr_', r.user_id)                 AS usr,
+           d.persona_code                            AS personaCode,
+           d.desired_job                             AS job,
+           d.total_score                             AS score,
+           d.cohort_size                             AS cohort,
+           ROUND(sv.avgr, 1)                         AS satisfaction,
+           r.response_time_ms                        AS ms,
+           DATE_FORMAT(r.created_at, '%m.%d %H:%i')  AS createdAt
+    <include refid="repFrom"/>
+    ORDER BY r.created_at DESC, r.report_id DESC
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <select id="count" resultType="long">
+    /* mngr.adminReports.count */
+    SELECT COUNT(*)
+    <include refid="repFrom"/>
+  </select>
+
+</mapper>

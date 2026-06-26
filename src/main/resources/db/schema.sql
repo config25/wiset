@@ -1114,3 +1114,34 @@ ALTER TABLE sys_education ADD CONSTRAINT fk_education_acdmcr FOREIGN KEY (acdmcr
 
 -- (스크랩 델타) sys_user_job_scrap → TN_INDVDL_PBLANC_SCRAP 스크랩행(복합키) 1:1 부착
 ALTER TABLE sys_user_job_scrap ADD CONSTRAINT fk_scrap_tn FOREIGN KEY (indvdl_user_sn, instt_user_sn, pblanc_sn) REFERENCES TN_INDVDL_PBLANC_SCRAP (INDVDL_USER_SN, INSTT_USER_SN, PBLANC_SN);
+
+-- 컨설팅 신청 정보 (1:1 커리어컨설팅 Q&A — AI 입력용)
+--   1:1 컨설팅 export(신청자/방식/주제/분야/컨설턴트/날짜/상태/질문/답변)와 1행=1상담 매칭.
+--   질문 = CNSL_REQST_CN(신청내용), 답변 = CNSL_RSLT_CN(결과내용) — 같은 행에 보관.
+--   회원유형은 USER_SN → 사용자 테이블 조인, 컨설턴트명은 CNSTNT_SN → TN_CNSTNT_INFO 조인.
+--   (※ FK USER_SN / CNSTNT_SN → 참조 테이블 로컬 미수신 → FK 보류)
+CREATE TABLE IF NOT EXISTS TN_CNSL_REQST_INFO (
+    CNSL_SN            BIGINT       NOT NULL              COMMENT '컨설팅 순번',
+    USER_SN            BIGINT       NOT NULL              COMMENT '사용자 순번(신청자)',
+    CNSL_MTHD_CODE     VARCHAR(5)   NOT NULL              COMMENT '컨설팅 방식 코드(전화/온라인)',
+    CNSL_TOPIC_CODE    VARCHAR(5)   NOT NULL              COMMENT '컨설팅 주제 코드',
+    CNSL_RLM_CODE      VARCHAR(5)   NOT NULL              COMMENT '컨설팅 분야 코드',
+    RESUME_OTHBC_AT    VARCHAR(1)   NOT NULL DEFAULT 'N'  COMMENT '이력서 공개 여부',
+    CNSL_REQST_CN      TEXT                               COMMENT '컨설팅 신청 내용=질문(원본 VARCHAR2(4000))',
+    CNSTNT_SN          BIGINT       NOT NULL              COMMENT '컨설턴트 순번',
+    RESVE_SN           BIGINT                             COMMENT '예약 순번',
+    CANCL_RESN         VARCHAR(500)                       COMMENT '취소 사유',
+    DCSN_AT            VARCHAR(1)                         COMMENT '확정 여부',
+    CNSL_RQSTDT        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '컨설팅 신청일',
+    CNSL_COMPT_AT      VARCHAR(1)            DEFAULT 'N'  COMMENT '컨설팅 완료 여부(상태)',
+    CNSL_COMPT_DE      DATETIME                           COMMENT '컨설팅 완료 일자',
+    CNSL_RSLT_CN       TEXT                               COMMENT '컨설팅 결과 내용=답변(원본 VARCHAR2(4000))',
+    CNSL_REQST_FILE_ID BIGINT                             COMMENT '신청 파일 ID',
+    CNSL_RSLT_FILE_ID  BIGINT                             COMMENT '결과 파일 ID',
+    REGISTER           VARCHAR(20)  NOT NULL              COMMENT '등록자',
+    RGSDE              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '등록일',
+    UPDUSR             VARCHAR(20)                        COMMENT '수정자',
+    UPDDE              DATETIME                           COMMENT '수정일',
+    INDVDLINFO_AGRE_AT VARCHAR(1)                         COMMENT '개인정보동의여부',
+    PRIMARY KEY (CNSL_SN)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='컨설팅 신청 정보(1:1 컨설팅 Q&A, AI 입력용)';

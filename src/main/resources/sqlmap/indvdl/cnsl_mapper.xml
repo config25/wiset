@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="indvdl.cnsl">
+
+    <!--
+      1:1 커리어컨설팅 Q&A (AI 입력용) — TN_CNSL_REQST_INFO 단일 테이블.
+      질문 = CNSL_REQST_CN, 답변 = CNSL_RSLT_CN (같은 행).
+      ※ SQL 은 양쪽(MariaDB/Tibero) 호환되게 작성. 아래 TODO 만 Tibero 전환 시 보강.
+        TODO(Tibero): 컨설턴트명 서브쿼리 / to_char(date,'YYYY.MM.DD') 포맷 / 저품질 필터.
+    -->
+    <select id="selectCnslQnaListByUser" parameterType="map" resultType="map">
+        /* indvdl.cnsl.selectCnslQnaListByUser */
+        SELECT a.cnsl_sn         AS CNSL_SN
+             , a.cnsl_reqst_cn   AS QUESTION          <!-- 질문(신청내용) -->
+             , a.cnsl_rslt_cn    AS ANSWER            <!-- 답변(결과내용) -->
+             , a.cnsl_mthd_code  AS CNSL_MTHD_CODE    <!-- 방식(전화/온라인) -->
+             , a.cnsl_topic_code AS CNSL_TOPIC_CODE   <!-- 주제 -->
+             , a.cnsl_rlm_code   AS CNSL_RLM_CODE     <!-- 분야 -->
+             , a.cnstnt_sn       AS CNSTNT_SN         <!-- 컨설턴트 순번 -->
+             , a.cnsl_rqstdt     AS CNSL_RQSTDT       <!-- 신청일 -->
+             , a.cnsl_compt_de   AS CNSL_COMPT_DE     <!-- 완료일 -->
+          FROM tn_cnsl_reqst_info a
+         WHERE a.user_sn = #{userSn}
+           AND a.cnsl_compt_at = 'Y'
+           AND a.cnsl_rslt_cn IS NOT NULL             <!-- 답변 있는 것만 -->
+         ORDER BY a.cnsl_rqstdt DESC
+    </select>
+
+</mapper>
