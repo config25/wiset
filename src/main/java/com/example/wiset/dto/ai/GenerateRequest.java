@@ -25,8 +25,8 @@ public class GenerateRequest {
     private String  jobPostingText;   // market-fit
     private String  experienceLevel;  // market-fit ("신입"|"경력")
     private Integer maxNewTokens = 512;
-    private Double  temperature = 0.1;
-    private Double  topP = 0.9;
+    private Double  temperature = 0.9;
+    private Double  topP = 0.8;
 
     /** /api/consulting — 코칭 본문(장문). */
     public static GenerateRequest consulting(String userProfile, String unstructuredData, String consultingLog) {

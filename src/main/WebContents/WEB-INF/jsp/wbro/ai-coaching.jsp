@@ -324,6 +324,17 @@
   document.getElementById('content').innerHTML = html;
   }
 
+  // AI 코칭 본문이 DB 에 없을 때: 하드코딩 가짜 리포트 대신 '정직한 빈 상태' 표시(마스킹 방지).
+  function renderEmpty(d){
+    document.getElementById('subtitle').textContent = d.subtitle || '';
+    renderBanner(d);
+    document.getElementById('content').innerHTML =
+      '<div style="text-align:center; padding:64px 20px;">'+
+        '<div style="font-size:16px; font-weight:700; color:var(--ink); margin-bottom:8px;">아직 생성된 AI 코칭 리포트가 없습니다.</div>'+
+        '<div style="font-size:14px; color:var(--ink-500); line-height:1.7;">분석을 진행하면 AI 코칭 결과가 이 영역에 표시됩니다.<br>(sys_ai_report 에 적재된 AI 답변이 없을 때 나타나는 화면입니다.)</div>'+
+      '</div>';
+  }
+
   // 저장된 리포트(JSON)가 있으면 '내용'만 덮어쓰고 렌더 — 테마(색/그라데이션)는 페르소나 디자인 유지.
   // 리포트 재조회(리포트 보기) 시 동일 디자인 그대로 재현. 저장된 게 없으면 목업(DATA) 폴백.
   var did = qp('diagnosisId');
@@ -353,16 +364,18 @@
       else renderText(d, bodyText);
       return;
     }
-    if(c){
+    if(c && (c.intro || c.sections)){   // 레거시: 구조화 JSON content 가 실제로 있을 때만 기존 렌더
       if(c.subtitle) d.subtitle = c.subtitle;
       if(c.title)    d.banner.title = c.title;
       if(c.chips)    d.banner.chips = c.chips;
       if(c.intro)    d.intro = c.intro;
       if(c.sections) d.sections = c.sections;
       if('closing' in c) d.closing = c.closing;
+      renderReport(d);
+      return;
     }
-    renderReport(d);
-  }).catch(function(){ renderReport(d); });
+    renderEmpty(d);   // AI content 없음 → 하드코딩 가짜 리포트 금지, 정직한 빈 상태
+  }).catch(function(){ renderEmpty(d); });
 
   // 탭 이동 (persona + diagnosisId 유지 — 특정 진단 리포트 조회 모드 보존)
   var sp=[]; if(persona) sp.push('persona='+encodeURIComponent(persona)); if(did) sp.push('diagnosisId='+encodeURIComponent(did));
