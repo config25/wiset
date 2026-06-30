@@ -14,6 +14,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="${ctx}/css/wb-ds.css">
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"
+          integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a"
+          crossorigin="anonymous"></script>
+  <style>
+    /* AI 본문(HTML) 직접 렌더 시 섹션 서식 — renderReport 인라인 스타일과 동일 톤 */
+    #content > h2 { font-size:21px; font-weight:700; color:var(--ink); letter-spacing:-0.02em; line-height:1.4; margin:40px 0 16px; padding-top:32px; border-top:1px solid var(--line); }
+    #content > h2:first-child { margin-top:0; padding-top:0; border-top:0; }
+    #content > h3 { font-size:15px; font-weight:700; color:var(--accent,#0F7C8C); margin:20px 0 7px; }
+    #content p  { font-size:15px; line-height:1.9; color:var(--ink-700); margin:0 0 14px; }
+    #content ul { margin:0 0 14px; padding-left:20px; }
+    #content li { font-size:15px; line-height:1.9; color:var(--ink-700); margin:0 0 6px; }
+    #content b, #content strong { color:var(--ink); }
+  </style>
 </head>
 <body class="wb-canvas">
 <div class="wb wb-frame">
@@ -230,6 +243,16 @@
     '</div>';
   }
 
+  // AI 본문이 이미 HTML(<h2>·<p> 등)이면 서식 태그를 살려 그대로 렌더.
+  // 외부 AI(신뢰 경계 밖) 출력이라 DOMPurify 로 sanitize 후 주입(XSS 방지). 라이브러리 미로딩 시 원문 폴백.
+  function renderHtml(d, raw){
+    document.getElementById('subtitle').textContent = d.subtitle;
+    renderBanner(d);
+    var el = document.getElementById('content');
+    el.style.setProperty('--accent', d.accent);
+    el.innerHTML = (window.DOMPurify ? DOMPurify.sanitize(raw) : raw);
+  }
+
   // 통짜 TEXT 본문 → 간단 서식 규칙으로 구조 복원(원래 섹션 디자인 재현).
   //   "숫자." 단독 줄 = 섹션 번호(다음 줄이 제목) / "숫자. 제목" 인라인 허용,
   //   종결(마침표·다/요 등)로 끝나는 줄 = 문단, 그 외 짧은 줄 = 소제목, 빈 줄 = 블록 구분.
@@ -325,7 +348,9 @@
         if(c.title)    d.banner.title = c.title;
         if(c.chips)    d.banner.chips = c.chips;
       }
-      renderText(d, bodyText);
+      // HTML 태그가 들어있으면 서식 살려 그대로(sanitize) 렌더, 아니면 통짜 TEXT 서식 복원.
+      if(/<\/?[a-z][\s\S]*?>/i.test(bodyText)) renderHtml(d, bodyText);
+      else renderText(d, bodyText);
       return;
     }
     if(c){
