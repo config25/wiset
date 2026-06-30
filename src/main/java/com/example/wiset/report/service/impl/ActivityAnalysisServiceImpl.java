@@ -3,6 +3,8 @@ package com.example.wiset.report.service.impl;
 import com.example.wiset.support.CommonDAO;
 import com.example.wiset.support.CurrentUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -23,6 +25,8 @@ import java.util.Map;
 // [wbridge] @Mapper 제거 → CommonDAO(report.aiReport.*, report.competency.*) 이식. DTO 유지.
 @Service
 public class ActivityAnalysisServiceImpl {
+
+    private static final Logger log = LoggerFactory.getLogger(ActivityAnalysisServiceImpl.class);
 
     /** MARKET 그룹코드 → 화면 부제(sub) 라벨. */
     private static final Map<String, String> MARKET_SUB = new LinkedHashMap<>();
@@ -45,6 +49,8 @@ public class ActivityAnalysisServiceImpl {
      */
     public Map<String, Object> getAnalysisReport(Long diagnosisId) throws Exception {
         long u = CurrentUser.userSn();
+        log.info("[활동분석조회] ===== 기준 정합도 등 읽기 시작 — user={}, reportType=ACTIVITY_ANALYSIS, diagnosisId={} =====",
+                u, diagnosisId);
         Map<String, Object> out = new LinkedHashMap<>();
 
         // 레거시 content(JSON) — 컬럼이 비었을 때만 의미. 있으면 프론트가 컬럼값으로 덮음.
@@ -68,7 +74,12 @@ public class ActivityAnalysisServiceImpl {
         pr.put("reportType", "ACTIVITY_ANALYSIS");
         pr.put("diagnosisId", diagnosisId);
         Long reportId = commonDAO.selectOne("report.competency.findReportId", pr);
-        if (reportId == null) return out;
+        if (reportId == null) {
+            log.warn("[활동분석조회] ⚠ ACTIVITY_ANALYSIS 리포트 행 없음(user={}) → 기준 정합도 못 받아옴(프론트 목업 폴백). "
+                    + "= 리포트 생성/적재가 한 번도 안 됨", u);
+            return out;
+        }
+        log.info("[활동분석조회] 대상 reportId={}", reportId);
 
         Map<String, Object> pid = new HashMap<>();
         pid.put("reportId", reportId);
@@ -108,7 +119,11 @@ public class ActivityAnalysisServiceImpl {
 
         // 역량 점수/근거
         List<Map<String, Object>> comps = commonDAO.selectList("report.competency.findCompetencies", pid);
-        if (comps.isEmpty()) return out;
+        if (comps.isEmpty()) {
+            log.warn("[활동분석조회] ⚠ sys_report_competency 0건(reportId={}) → 기준 정합도(rows) 못 받아옴. "
+                    + "= type1(역량평가) 적재가 안 됨(파싱 null 또는 AI 호출 실패)", reportId);
+            return out;
+        }
 
         Map<Long, List<Map<String, Object>>> srcByComp = new LinkedHashMap<>();
         for (Map<String, Object> s : commonDAO.<Map<String, Object>>selectList("report.competency.findSources", pid)) {
@@ -172,6 +187,14 @@ public class ActivityAnalysisServiceImpl {
         if (!ksa.isEmpty())          out.put("ksa", ksa);
         if (!strengthsTop.isEmpty()) out.put("strengthsTop", strengthsTop);
         if (!gapsTop.isEmpty())      out.put("gapsTop", gapsTop);
+        log.info("[활동분석조회] ===== 완료 — 역량 {}건 → 기준정합도(CRITERIA) {}건, 시장(MARKET) {}건, "
+                + "강점·보완(HIGHLIGHT) {}건, criteriaSummary={} =====",
+                comps.size(), rows.size(), ksa.size(), strengthsTop.size() + gapsTop.size(),
+                out.get("criteriaSummary") != null);
+        if (rows.isEmpty()) {
+            log.warn("[활동분석조회] ⚠ CRITERIA(기준 정합도) 0건 — 역량은 있는데 fit_type=CRITERIA 행이 없음 "
+                    + "(type1 적재 시 group/fit_type 불일치 가능성)");
+        }
         return out;
     }
 
