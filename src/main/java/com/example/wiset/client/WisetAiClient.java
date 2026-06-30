@@ -48,7 +48,9 @@ public class WisetAiClient {
         try {
             String reqBody = OM.writeValueAsString(req);
             log.info("\n========================= [AI프롬프트원문 {}] =========================\n{}\n========================================================================",
-                    path, reqBody.length() > 8000 ? reqBody.substring(0, 8000) + "…(이하 생략, 총 " + reqBody.length() + "자)" : reqBody);
+                    path, reqBody +"//총" + reqBody.length() + "자");
+            log.info("unstructured_data 길이: {}자",
+                    req.getUnstructuredData() == null ? 0 : req.getUnstructuredData().length());
         } catch (Exception e) {
             log.warn("[AI프롬프트원문 {}] 직렬화 실패 — {}", path, e.toString());
         }
