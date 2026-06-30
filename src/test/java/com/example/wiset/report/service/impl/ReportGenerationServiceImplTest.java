@@ -31,7 +31,8 @@ import static org.mockito.Mockito.when;
  * <ul>
  *   <li>type0(컨설팅) 본문 + type1(역량평가) JSON 을 병렬 호출 후 적재 서비스로 넘기는 흐름</li>
  *   <li>코칭 HTML 본문이 백엔드에서 변형 없이 그대로 persist 로 전달됨 (이번 이슈의 핵심)</li>
- *   <li>type1 JSON 형식이 깨졌을 때(알려진 이슈: 점수를 객체로 감싸 보냄) 역량 적재가 생략됨</li>
+ *   <li>type1 점수가 2겹(숫자)·3겹({score,reason,sources})로 와도 점수를 추출해 적재됨 (ISSUE-1 수정)</li>
+ *   <li>점수를 전혀 못 뽑는 응답(빈/비JSON)일 때만 역량 적재가 생략됨</li>
  *   <li>한쪽 AI 호출이 실패해도 전체가 죽지 않고 나머지로 진행됨</li>
  * </ul>
  *
@@ -122,19 +123,37 @@ class ReportGenerationServiceImplTest {
     }
 
     @Test
-    void type1_JSON_형식이_깨지면_역량적재는_생략된다() throws Exception {
-        // given : 역량평가 응답이 "점수를 객체로 감싼" 잘못된 형식(알려진 이슈)
-        //         → Map<String,Map<String,Double>> 로 파싱 실패해야 한다
+    void type1_3겹_score객체_형식도_점수를_추출해_적재한다() throws Exception {
+        // given : 역량평가 응답이 score/reason/sources 를 감싼 3겹 객체(실제 서버 형식, ISSUE-1)
+        //         → score 만 뽑아 {그룹:{역량:점수}} 로 적재되어야 한다
         when(ai.generate(eq("/api/consulting"), any())).thenReturn(resp("코칭 본문"));
-        when(ai.generate(eq("/api/competency-eval"), any()))
-                .thenReturn(resp("{\"공통활동\":{\"문제해결\":{\"score\":2}}}"));
+        when(ai.generate(eq("/api/competency-eval"), any())).thenReturn(resp(
+                "{\"공통활동\":{\"문제해결\":{\"score\":2.0,\"reason\":\"근거\",\"sources\":[]}}}"));
         when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
                 .thenReturn(new HashMap<>());
 
         // when
         Map<String, Object> out = sut.generate(nonEmptyInputs());
 
-        // then : 파싱 실패 → groups=null 로 persist 호출, 요약의 역량 그룹 수는 0
+        // then : 3겹에서 score 추출 → 그룹 적재, 요약 역량 그룹 수 1
+        verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture());
+        assertThat(groupsCaptor.getValue()).containsKey("공통활동");
+        assertThat(groupsCaptor.getValue().get("공통활동")).containsEntry("문제해결", 2.0);
+        assertThat(out.get("competencyGroups")).isEqualTo(1);
+    }
+
+    @Test
+    void type1_점수를_못뽑는_응답이면_역량적재는_생략된다() throws Exception {
+        // given : JSON 도 아닌(점수 추출 불가) 응답 → groups=null 로 적재 생략
+        when(ai.generate(eq("/api/consulting"), any())).thenReturn(resp("코칭 본문"));
+        when(ai.generate(eq("/api/competency-eval"), any())).thenReturn(resp("형식 깨진 응답"));
+        when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
+                .thenReturn(new HashMap<>());
+
+        // when
+        Map<String, Object> out = sut.generate(nonEmptyInputs());
+
+        // then : 파싱 불가 → groups=null 로 persist 호출, 요약의 역량 그룹 수는 0
         verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture());
         assertThat(groupsCaptor.getValue()).isNull();
         assertThat(out.get("competencyGroups")).isEqualTo(0);

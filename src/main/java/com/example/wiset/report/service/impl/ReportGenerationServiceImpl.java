@@ -5,13 +5,14 @@ import com.example.wiset.dto.ai.GenerateRequest;
 import com.example.wiset.dto.ai.GenerateResponse;
 import com.example.wiset.dto.ai.GenerationInputs;
 import com.example.wiset.support.CurrentUser;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -134,15 +135,42 @@ public class ReportGenerationServiceImpl {
         return new String[]{title, subtitle.trim(), kw.toString()};
     }
 
-    /** type1 응답 텍스트(JSON) → {그룹명:{역량명:0~3점}}. 파싱 실패 시 null(적재 생략). */
+    /**
+     * type1 응답 텍스트(JSON) → {그룹명:{역량명:0~3점}}. 점수 못 뽑으면 null(적재 생략).
+     *   역량값은 두 형식을 모두 허용한다(서버 응답이 점수만 → 객체로 진화):
+     *     2겹: {"공통활동":{"문제해결":2.0}}                       — 점수를 숫자로 직접
+     *     3겹: {"공통활동":{"문제해결":{"score":2.0,"reason":..,"sources":[]}}} — 객체에서 score 추출
+     *   ※ reason·sources 는 현재 적재 스키마(점수만)에 자리가 없어 보존하지 않는다(별도 과제).
+     */
     private Map<String, Map<String, Double>> parseCompetency(String responseText) {
         if (responseText == null || responseText.trim().isEmpty()) return null;
         try {
-            return om.readValue(responseText, new TypeReference<Map<String, Map<String, Double>>>() {});
+            JsonNode root = om.readTree(responseText);
+            Map<String, Map<String, Double>> groups = new LinkedHashMap<>();
+            for (Iterator<Map.Entry<String, JsonNode>> git = root.fields(); git.hasNext(); ) {
+                Map.Entry<String, JsonNode> group = git.next();
+                if (!group.getValue().isObject()) continue;
+                Map<String, Double> scores = new LinkedHashMap<>();
+                for (Iterator<Map.Entry<String, JsonNode>> cit = group.getValue().fields(); cit.hasNext(); ) {
+                    Map.Entry<String, JsonNode> comp = cit.next();
+                    Double score = extractScore(comp.getValue());
+                    if (score != null) scores.put(comp.getKey(), score);
+                }
+                if (!scores.isEmpty()) groups.put(group.getKey(), scores);
+            }
+            return groups.isEmpty() ? null : groups;
         } catch (Exception e) {
             log.warn("역량 JSON 파싱 실패 — 역량 적재 생략. 응답: {}", responseText, e);
             return null;
         }
+    }
+
+    /** 역량값 노드에서 점수 추출. 숫자면 그대로, {score:..} 객체면 score 필드. 못 뽑으면 null. */
+    private static Double extractScore(JsonNode v) {
+        if (v == null || v.isNull()) return null;
+        if (v.isNumber()) return v.asDouble();                       // 2겹: 점수 직접
+        if (v.isObject() && v.path("score").isNumber()) return v.get("score").asDouble(); // 3겹: {score,..}
+        return null;
     }
 
     /** 호출 실패 시 예외로 전체를 죽이지 않고 null 반환(로그만). */
