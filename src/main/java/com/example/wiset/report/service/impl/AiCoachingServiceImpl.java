@@ -3,6 +3,8 @@ package com.example.wiset.report.service.impl;
 import com.example.wiset.support.CommonDAO;
 import com.example.wiset.support.CurrentUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -26,6 +28,8 @@ import java.util.Map;
 @Service
 public class AiCoachingServiceImpl {
 
+    private static final Logger log = LoggerFactory.getLogger(AiCoachingServiceImpl.class);
+
     /** keywords 줄에 "아이콘|라벨" 형식이 아닐 때 쓰는 기본 아이콘. */
     private static final String DEFAULT_CHIP_ICON = "sparkle";
 
@@ -42,6 +46,8 @@ public class AiCoachingServiceImpl {
      */
     public Map<String, Object> getCoachingReport(Long diagnosisId) throws Exception {
         long u = CurrentUser.userSn();
+        log.info("[코칭조회] ===== ① 화면 렌더용 DB 읽기 시작 — user={}, reportType=COACHING, diagnosisId={} =====",
+                u, diagnosisId);
         Map<String, Object> p = new HashMap<>();
         p.put("userSn", u);
         p.put("reportType", "COACHING");
@@ -49,6 +55,7 @@ public class AiCoachingServiceImpl {
         Map<String, Object> row = commonDAO.selectOne("report.aiReport.findReport", p);
         Map<String, Object> out = new LinkedHashMap<>();
         if (row == null) {
+            log.warn("[코칭조회] ② sys_ai_report 에 COACHING 행 없음 → content=null (프론트가 페르소나 목업으로 폴백)");
             out.put("content", null);
             return out;
         }
@@ -56,6 +63,8 @@ public class AiCoachingServiceImpl {
         // 본문 — JSON 이면 객체로, 아니면 통짜 TEXT 원문으로 (자동 감지)
         Object content = null;
         String raw = str(row.get("content"));
+        log.info("[코칭조회] ② DB 행 발견 — content {}자, bannerTitle='{}' (※ 이 값이 그대로 화면에 렌더됨)",
+                raw == null ? 0 : raw.length(), str(row.get("bannerTitle")));
         if (raw != null && !raw.trim().isEmpty()) {
             try {
                 content = om.readValue(raw, Object.class);
@@ -67,6 +76,8 @@ public class AiCoachingServiceImpl {
         out.put("bannerTitle", emptyToNull(str(row.get("bannerTitle"))));
         out.put("subtitle", emptyToNull(str(row.get("subtitle"))));
         out.put("chips", parseChips(str(row.get("keywords"))));
+        log.info("[코칭조회] ===== ③ 읽기 완료 → 화면 반환 (content {}) =====",
+                content == null ? "없음(null)" : "있음");
         return out;
     }
 

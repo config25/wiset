@@ -48,6 +48,8 @@ public class ReportPersistServiceImpl {
     public Map<String, Object> persist(long userSn, String coachingText,
                                        String bannerTitle, String bannerSubtitle, String bannerKeywords,
                                        Map<String, Map<String, Double>> groups) throws Exception {
+        log.info("[적재] ===== 시작 user={}, 코칭={}자, 역량그룹={}개 =====",
+                userSn, coachingText == null ? 0 : coachingText.length(), groups == null ? 0 : groups.size());
         Map<String, Object> dp = new HashMap<>();
         dp.put("userSn", userSn);
         Long diagnosisId = commonDAO.selectOne("report.write.findLatestDiagnosisId", dp);
@@ -56,6 +58,9 @@ public class ReportPersistServiceImpl {
             h.put("userSn", userSn);
             commonDAO.insert("report.write.insertDiagnosis", h);
             diagnosisId = ((Number) h.get("diagnosisId")).longValue();
+            log.info("[적재] 진단 신규 생성 → diagnosisId={}", diagnosisId);
+        } else {
+            log.info("[적재] 기존 diagnosisId={} 사용", diagnosisId);
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -67,7 +72,9 @@ public class ReportPersistServiceImpl {
             Map<String, Object> cp = new HashMap<>();
             cp.put("reportId", coachingReportId);
             cp.put("content", coachingText);
-            commonDAO.update("report.write.updateReportContent", cp);
+            int contentRows = commonDAO.update("report.write.updateReportContent", cp);
+            log.info("[적재] 코칭 본문 UPDATE 실행 → reportId={} ({}자), 적용 {}행{}", coachingReportId,
+                    coachingText.length(), contentRows, contentRows == 0 ? "  ⚠ 0행(대상 리포트 매칭 실패)" : "");
             if (bannerTitle != null && !bannerTitle.trim().isEmpty()) {
                 Map<String, Object> bp = new HashMap<>();
                 bp.put("reportId", coachingReportId);
@@ -77,7 +84,6 @@ public class ReportPersistServiceImpl {
                 commonDAO.update("report.write.updateReportBanner", bp);
                 log.info("[적재] 코칭 배너 갱신 → reportId={} title='{}'", coachingReportId, bannerTitle);
             }
-            log.info("[적재] 코칭 본문 덮어쓰기 → reportId={} ({}자)", coachingReportId, coachingText.length());
             out.put("coachingReportId", coachingReportId);
             out.put("coachingChars", coachingText.length());
         } else {
@@ -94,6 +100,7 @@ public class ReportPersistServiceImpl {
         } else {
             log.info("[적재] 역량 데이터 없음 — 건너뜀");
         }
+        log.info("[적재] ===== 완료 user={} → {} =====", userSn, out);
         return out;
     }
 
@@ -102,13 +109,18 @@ public class ReportPersistServiceImpl {
         fp.put("userSn", userSn);
         fp.put("reportType", reportType);
         Long id = commonDAO.selectOne("report.write.findReportId", fp); // 기존 시드 리포트 재사용(진단 무관)
-        if (id != null) return id;
+        if (id != null) {
+            log.info("[적재] reportType={} → 기존 reportId={} 재사용", reportType, id);
+            return id;
+        }
         Map<String, Object> h = new HashMap<>();
         h.put("userSn", userSn);
         h.put("diagnosisId", diagnosisId);
         h.put("reportType", reportType);
         commonDAO.insert("report.write.insertReport", h);
-        return ((Number) h.get("reportId")).longValue();
+        long newId = ((Number) h.get("reportId")).longValue();
+        log.info("[적재] reportType={} → 신규 reportId={} 생성", reportType, newId);
+        return newId;
     }
 
     /** CRITERIA + HIGHLIGHT 만 비우고 새로 적재(MARKET 보존). 반환=기준역량 건수. */
@@ -116,8 +128,10 @@ public class ReportPersistServiceImpl {
         Map<String, Object> dp = new HashMap<>();
         dp.put("reportId", reportId);
         dp.put("types", AI_TYPES);
-        commonDAO.delete("report.write.deleteCompetencySourcesByTypes", dp);
-        commonDAO.delete("report.write.deleteCompetenciesByTypes", dp);
+        int delSrc = commonDAO.delete("report.write.deleteCompetencySourcesByTypes", dp);
+        int delComp = commonDAO.delete("report.write.deleteCompetenciesByTypes", dp);
+        log.info("[적재] 기존 CRITERIA/HIGHLIGHT 삭제 → sources {}행, competency {}행 (reportId={})",
+                delSrc, delComp, reportId);
 
         int order = 10, count = 0;
         List<String[]> ranked = new ArrayList<>(); // [name, score100]
@@ -141,6 +155,7 @@ public class ReportPersistServiceImpl {
                 count++;
             }
         }
+        log.info("[적재] CRITERIA 역량 INSERT {}건 (reportId={})", count, reportId);
 
         // 강점 TOP3(높은 점수) / 보완 TOP3(낮은 점수) — required/comment/근거는 비움
         ranked.sort((a, b) -> Integer.compare(Integer.parseInt(b[1]), Integer.parseInt(a[1])));

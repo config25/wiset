@@ -31,6 +31,13 @@ public class ReportGenerationServiceImpl {
 
     private static final Logger log = LoggerFactory.getLogger(ReportGenerationServiceImpl.class);
 
+    /**
+     * [디버그] consulting_log 오염(타 사용자 상담 누적, ISSUE-2) 격리용.
+     *   true → 컨설팅 호출 직전 consulting_log 를 강제로 비워 보냄. AI 응답이 달라지면 오염이 원인임이 확정.
+     *   원인 확정·DB 정리 후엔 false 로 되돌리거나 블록 제거.
+     */
+    private static final boolean DEBUG_CLEAR_CONSULTING_LOG = true;
+
     private final WisetAiClient ai;
     private final ExecutorService exec;
     private final ReportPersistServiceImpl persistService;
@@ -63,6 +70,13 @@ public class ReportGenerationServiceImpl {
                 in.getTargetRole(), len(in.getResumeText()), len(in.getUserProfile()),
                 len(in.getUnstructuredData()), len(in.getConsultingLog()));
 
+        // [디버그] 호출 전 consulting_log 강제 클리어(오염 격리). "" 로 바꿔 완전 빈값 실험도 가능.
+        if (DEBUG_CLEAR_CONSULTING_LOG) {
+            log.warn("[디버그] consulting_log 강제 클리어 — 기존 {}자 → '과거 로그 없음' (오염 격리 실험)",
+                    len(in.getConsultingLog()));
+            in.setConsultingLog("과거 로그 없음");
+        }
+
         GenerateRequest consultingReq =
                 GenerateRequest.consulting(in.getUserProfile(), in.getUnstructuredData(), in.getConsultingLog());
         GenerateRequest evalReq =
@@ -85,7 +99,16 @@ public class ReportGenerationServiceImpl {
                 len(coachingText), groups == null ? 0 : groups.size());
 
         String[] banner = composeBanner(in.getTargetRole(), in.getExperienceLevel());
-        Map<String, Object> persisted = persistService.persist(userSn, coachingText, banner[0], banner[1], banner[2], groups);
+        log.info("[리포트생성] DB 적재 시작 — persist 호출 (코칭 {}자, 역량그룹 {}개)",
+                len(coachingText), groups == null ? 0 : groups.size());
+        Map<String, Object> persisted;
+        try {
+            persisted = persistService.persist(userSn, coachingText, banner[0], banner[1], banner[2], groups);
+            log.info("[리포트생성] ✅ DB 적재 성공 → {}", persisted);
+        } catch (Exception e) {
+            log.error("[리포트생성] ❌ DB 적재 실패 — 트랜잭션 롤백됨: {}", e.toString(), e);
+            throw e;
+        }
         log.info("[리포트생성] ===== 완료 — {} =====", persisted);
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -143,34 +166,86 @@ public class ReportGenerationServiceImpl {
      *   ※ reason·sources 는 현재 적재 스키마(점수만)에 자리가 없어 보존하지 않는다(별도 과제).
      */
     private Map<String, Map<String, Double>> parseCompetency(String responseText) {
-        if (responseText == null || responseText.trim().isEmpty()) return null;
+        if (responseText == null || responseText.trim().isEmpty()) {
+            log.warn("[역량파싱] type1 응답이 비어 있음 → 역량 적재 생략(에러 아님)");
+            return null;
+        }
         try {
             JsonNode root = om.readTree(responseText);
             Map<String, Map<String, Double>> groups = new LinkedHashMap<>();
+            int totalComp = 0, scored = 0;
             for (Iterator<Map.Entry<String, JsonNode>> git = root.fields(); git.hasNext(); ) {
                 Map.Entry<String, JsonNode> group = git.next();
-                if (!group.getValue().isObject()) continue;
+                if (!group.getValue().isObject()) {
+                    log.warn("[역량파싱] 그룹 '{}' 값이 오브젝트가 아님(type={}) → 그룹 통째 스킵",
+                            group.getKey(), group.getValue().getNodeType());
+                    continue;
+                }
                 Map<String, Double> scores = new LinkedHashMap<>();
                 for (Iterator<Map.Entry<String, JsonNode>> cit = group.getValue().fields(); cit.hasNext(); ) {
                     Map.Entry<String, JsonNode> comp = cit.next();
+                    totalComp++;
                     Double score = extractScore(comp.getValue());
-                    if (score != null) scores.put(comp.getKey(), score);
+                    if (score != null) {
+                        scores.put(comp.getKey(), score);
+                        scored++;
+                    } else {
+                        log.warn("[역량파싱] 역량 '{}.{}' 에서 점수 추출 실패 — 값={} (점수 키명/형식 확인)",
+                                group.getKey(), comp.getKey(), comp.getValue());
+                    }
                 }
                 if (!scores.isEmpty()) groups.put(group.getKey(), scores);
             }
-            return groups.isEmpty() ? null : groups;
+            // 최종 파싱 결과를 항상 찍어, '에러 없이 적재 생략'되는 지점을 눈에 보이게 한다.
+            log.info("[역량파싱] 최종 결과 — 그룹 {}개, 점수 추출 {}/{}개, groups={}",
+                    groups.size(), scored, totalComp, groups);
+            if (groups.isEmpty()) {
+                log.warn("[역량파싱] ⚠ 추출 점수 0개 → 역량 적재가 '에러 없이' 생략됩니다. "
+                        + "AI 점수 키명(score/Score/value 등)·구조를 확인하세요.");
+                return null;
+            }
+            return groups;
         } catch (Exception e) {
             log.warn("역량 JSON 파싱 실패 — 역량 적재 생략. 응답: {}", responseText, e);
             return null;
         }
     }
 
-    /** 역량값 노드에서 점수 추출. 숫자면 그대로, {score:..} 객체면 score 필드. 못 뽑으면 null. */
+    /** 점수로 인정하는 키(대소문자 무시): score / value / 점수. */
+    private static final String[] SCORE_KEYS = {"score", "value", "점수"};
+
+    /**
+     * 역량값 노드에서 점수 추출. 못 뽑으면 null(→ 호출부에서 로그 후 스킵).
+     *   - 숫자 노드(2.0) → 그대로
+     *   - 문자열 숫자("2.0") → 파싱
+     *   - 오브젝트({score|Score|value|점수: ...}) → 해당 키에서 추출(대소문자 무시, 문자열 숫자도 허용)
+     */
     private static Double extractScore(JsonNode v) {
         if (v == null || v.isNull()) return null;
-        if (v.isNumber()) return v.asDouble();                       // 2겹: 점수 직접
-        if (v.isObject() && v.path("score").isNumber()) return v.get("score").asDouble(); // 3겹: {score,..}
+        if (v.isNumber()) return v.asDouble();
+        if (v.isTextual()) return parseNum(v.asText());
+        if (v.isObject()) {
+            for (Iterator<String> it = v.fieldNames(); it.hasNext(); ) {
+                String key = it.next();
+                for (String want : SCORE_KEYS) {
+                    if (key.equalsIgnoreCase(want)) {
+                        JsonNode sv = v.get(key);
+                        if (sv != null && sv.isNumber()) return sv.asDouble();
+                        if (sv != null && sv.isTextual()) return parseNum(sv.asText());
+                    }
+                }
+            }
+        }
         return null;
+    }
+
+    private static Double parseNum(String s) {
+        if (s == null) return null;
+        try {
+            return Double.parseDouble(s.trim());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 호출 실패 시 예외로 전체를 죽이지 않고 null 반환(로그만). */
