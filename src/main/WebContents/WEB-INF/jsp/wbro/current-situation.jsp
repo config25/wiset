@@ -355,7 +355,7 @@
           field('졸업상태',false, selH('data-f="grad"',['선택'].concat(GRAD_STATUS), rec.gradStatusLabel||'선택'))+
         '</div>'+
         '<div class="wb-mgrid" style="grid-template-columns:2fr 1fr 1fr">'+
-          field('전공명',true,'<input class="input" data-f="major" value="'+esc(rec.majorName||'')+'" placeholder="전공명을 입력해주세요">')+
+          field('전공명',true,'<input class="input" data-f="major" value="'+esc(rec.majorName||'')+'" placeholder="전공명을 입력해주세요"><span class="caption" data-note="majorHint" style="display:none; margin-top:6px;">(인문계 / 자연계로 작성해주시면 됩니다)</span>')+
           field('학점',false,'<input class="input" data-f="gpa" value="'+esc(rec.gpa||'')+'" placeholder="3.8">')+
           field('총점',false,'<input class="input" data-f="total" value="'+esc(rec.totalGpa||'')+'" placeholder="4.5">')+
         '</div>'+
@@ -364,6 +364,14 @@
       '</div>';
     var bodyEl = shell({ width:720, title: edit?'학력/전공 수정':'학력/전공 입력', sub:'학력 선택 후 정보를 입력하고 전공명을 등록해주세요.', headerRight:hr, bodyHtml:body, footHtml:'<button class="btn btn-ghost btn-pill" data-x>취소</button><button class="btn btn-brand btn-pill" data-save>저장</button>' });
     wireCheckrows();
+    // 학력구분이 '고등학교 졸업'일 때만 전공명 안내(인문계/자연계) 노출
+    (function(){
+      var seSel = bodyEl.querySelector('[data-f="se"]');
+      var hint = bodyEl.querySelector('[data-note="majorHint"]');
+      function syncMajorHint(){ if(hint){ hint.style.display = (seSel && seSel.value==='고등학교 졸업') ? 'block' : 'none'; } }
+      if(seSel){ seSel.addEventListener('change', syncMajorHint); }
+      syncMajorHint();
+    })();
     modalRoot.querySelector('[data-save]').addEventListener('click', function(){
       var dto = {
         acdmcrSn: (rec.acdmcrSn!=null?rec.acdmcrSn:null),
