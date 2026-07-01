@@ -77,6 +77,17 @@ public class ReportInputAssembler {
             String goalRole = blankToNull(str(growth.get("targetRole")));
             if (goalRole != null) targetRole = goalRole;
         }
+        
+        if("정보통신 관련직".equals(targetRole)) {
+            targetRole = "AI 정보보안";
+        } else if ("생명 및 자연과학 관련직".equals(targetRole) || "화학/식품가공 관련직".equals(targetRole)) {
+            targetRole = "화학바이오";
+        } else if ("전기/전자 관련직".equals(targetRole)) {
+            targetRole = "반도체";
+        }else {
+            targetRole = "일반산업";
+        }
+
         in.setTargetRole(targetRole);
         in.setResumeText(resumeText);
         in.setUnstructuredData(buildUnstructured(resumeText, coverContent, coverTitle));
