@@ -10,7 +10,7 @@
       <div class="wb-nav-item ${activeNav eq 'edu' ? 'active' : ''}">교육</div>
       <div class="wb-nav-item ${activeNav eq 'research' ? 'active' : ''}">일자리·연구</div>
       <div class="wb-nav-item ${activeNav eq 'mentor' ? 'active' : ''}">멘토링</div>
-      <div class="wb-nav-item ${activeNav eq 'consult' ? 'active' : ''}">진단·컨설팅</div>
+      <a href="${ctx}/service-intro" class="wb-nav-item ${activeNav eq 'consult' ? 'active' : ''}" style="text-decoration:none;">진단·컨설팅</a>
       <div class="wb-nav-item ${activeNav eq 'career' ? 'active' : ''}">진로·커리어</div>
     </nav>
     <div class="wb-util">
