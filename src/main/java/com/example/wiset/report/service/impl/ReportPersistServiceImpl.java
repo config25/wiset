@@ -62,6 +62,7 @@ public class ReportPersistServiceImpl {
         } else {
             log.info("[적재] 기존 diagnosisId={} 사용", diagnosisId);
         }
+        //이런 식이면 최신 이력 하나만 볼 수 있는 상황인데 괜찮을까욥
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("diagnosisId", diagnosisId);
