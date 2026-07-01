@@ -126,6 +126,7 @@ body.wb-canvas {
   font-size: 32px; font-weight: 800; letter-spacing: -0.04em;
   background: var(--logo-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
+.wb-logo-img { height: 40px; width: auto; display: block; }
 
 /* Utility — top right */
 .wb-util {

@@ -4,7 +4,7 @@
 <%@ taglib prefix="wb" tagdir="/WEB-INF/tags" %>
 <header class="wb-header">
   <div class="wb-header-inner">
-    <div class="wb-logo"><span class="wb-logo-word">W브릿지</span></div>
+    <div class="wb-logo"><img src="${ctx}/img/logo.png" alt="W브릿지" class="wb-logo-img"></div>
     <nav class="wb-nav">
       <div class="wb-nav-item ${activeNav eq 'job' ? 'active' : ''}"><span class="wb-ai-bubble">AI</span>취업·채용</div>
       <div class="wb-nav-item ${activeNav eq 'edu' ? 'active' : ''}">교육</div>
