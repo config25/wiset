@@ -118,6 +118,13 @@ public class CurrentSituationServiceImpl {
             p.put("reg", reg);
             commonDAO.update("mypage.resume.updateAcdmcr", p);
         }
+        // 최종학력은 이력서당 1건만 — 이 건을 최종으로 저장하면 다른 학력의 최종 플래그를 먼저 해제한다.
+        if (d.isFinal()) {
+            Map<String, Object> cf = new HashMap<>();
+            cf.put("resumeSn", resumeSn);
+            cf.put("acdmcrSn", d.getAcdmcrSn());
+            commonDAO.update("mypage.resume.clearOtherFinal", cf);
+        }
         Map<String, Object> pd = new HashMap<>();
         pd.put("acdmcrSn", d.getAcdmcrSn());
         pd.put("minorMajor", blankToNull(d.getMinorMajor()));

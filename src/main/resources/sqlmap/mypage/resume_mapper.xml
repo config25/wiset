@@ -86,6 +86,14 @@
   </select>
 
   <!-- ===================== 학력 델타 (sys_education) ===================== -->
+  <!-- 최종학력은 이력서당 1건만 — 이 건을 최종으로 저장하기 전, 같은 이력서의 다른 학력 최종 플래그를 내린다. -->
+  <update id="clearOtherFinal">
+    UPDATE sys_education e
+    JOIN TN_RESUME_ACDMCR a ON a.ACDMCR_SN = e.acdmcr_sn
+    SET e.is_final = 0
+    WHERE a.RESUME_SN = #{resumeSn} AND e.acdmcr_sn &lt;&gt; #{acdmcrSn}
+  </update>
+
   <insert id="upsertEducationDelta">
     INSERT INTO sys_education (acdmcr_sn, minor_major, graduation_status, is_final)
     VALUES (#{acdmcrSn}, #{minorMajor}, #{gradCode}, #{isFinal})
