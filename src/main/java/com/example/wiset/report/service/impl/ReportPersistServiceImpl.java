@@ -16,10 +16,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * AI 생성 결과를 리포트 테이블에 delete-rewrite 로 적재(트랜잭션).
- *   - 코칭 본문(type0)        → sys_ai_report(COACHING).content 덮어쓰기
- *   - 기준정합도 점수(type1)  → sys_report_competency(CRITERIA) 삭제 후 재삽입 + 강점/보완 TOP3(HIGHLIGHT) 파생
- *   시장정합도/CFI/JD/해설·근거는 손대지 않음(시드 유지). 점수 0~3 → 0~100(×100/3).
+ * AI 생성 결과를 적재(트랜잭션). 진단할 때마다 새 진단 row + 새 리포트 row 를 만들어 이력 보존.
+ *   - 코칭 본문(type0)        → sys_ai_report(COACHING).content
+ *   - 기준정합도 점수(type1)  → sys_report_competency(CRITERIA) + 강점/보완 TOP3(HIGHLIGHT) + CFI 파생
+ *   새 리포트라 시장정합도(MARKET)/JD/해설·근거는 아직 비어 있음(추후 AI 재생성 예정). 점수 0~3 → 0~100(×100/3).
  *
  * // [wbridge] @Mapper 제거 → CommonDAO(report.write.*) 이식. DTO 유지.
  */
@@ -47,22 +47,15 @@ public class ReportPersistServiceImpl {
     @Transactional
     public Map<String, Object> persist(long userSn, String coachingText,
                                        String bannerTitle, String bannerSubtitle, String bannerKeywords,
-                                       Map<String, Map<String, Double>> groups) throws Exception {
+                                       Map<String, Map<String, CompetencyEval>> groups) throws Exception {
         log.info("[적재] ===== 시작 user={}, 코칭={}자, 역량그룹={}개 =====",
                 userSn, coachingText == null ? 0 : coachingText.length(), groups == null ? 0 : groups.size());
-        Map<String, Object> dp = new HashMap<>();
-        dp.put("userSn", userSn);
-        Long diagnosisId = commonDAO.selectOne("report.write.findLatestDiagnosisId", dp);
-        if (diagnosisId == null) {
-            Map<String, Object> h = new HashMap<>();
-            h.put("userSn", userSn);
-            commonDAO.insert("report.write.insertDiagnosis", h);
-            diagnosisId = ((Number) h.get("diagnosisId")).longValue();
-            log.info("[적재] 진단 신규 생성 → diagnosisId={}", diagnosisId);
-        } else {
-            log.info("[적재] 기존 diagnosisId={} 사용", diagnosisId);
-        }
-        //이런 식이면 최신 이력 하나만 볼 수 있는 상황인데 괜찮을까욥
+        // 진단할 때마다 새 진단 row 를 남겨 이력 보존. (과거엔 최신 1건을 재사용 → 이전 진단/리포트가 덮여 이력 유실)
+        Map<String, Object> h = new HashMap<>();
+        h.put("userSn", userSn);
+        commonDAO.insert("report.write.insertDiagnosis", h);
+        long diagnosisId = ((Number) h.get("diagnosisId")).longValue();
+        log.info("[적재] 진단 신규 생성 → diagnosisId={}", diagnosisId);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("diagnosisId", diagnosisId);
@@ -91,11 +84,11 @@ public class ReportPersistServiceImpl {
             log.info("[적재] 코칭 본문 없음 — 건너뜀");
         }
 
-        // 기준정합도(CRITERIA) + 강점/보완 TOP3 + CFI 파생. 시장정합도(MARKET)는 시드 유지(손 안 댐).
+        // 기준정합도(CRITERIA) + 강점/보완 TOP3 + CFI 파생. 새 리포트라 시장정합도(MARKET)/JD 는 아직 없음(AI 재생성 예정).
         if (groups != null && !groups.isEmpty()) {
             long activityReportId = ensureReport(userSn, diagnosisId, "ACTIVITY_ANALYSIS");
             int n = saveCriteria(activityReportId, groups);
-            log.info("[적재] 기준정합도 delete-rewrite → reportId={}, 역량 {}개 (시장정합도/JD 보존)", activityReportId, n);
+            log.info("[적재] 기준정합도 delete-rewrite → reportId={}, 역량 {}개 (MARKET/JD 미적재 — AI 재생성 예정)", activityReportId, n);
             out.put("activityReportId", activityReportId);
             out.put("criteriaCount", n);
         } else {
@@ -108,10 +101,11 @@ public class ReportPersistServiceImpl {
     private long ensureReport(long userSn, long diagnosisId, String reportType) throws Exception {
         Map<String, Object> fp = new HashMap<>();
         fp.put("userSn", userSn);
+        fp.put("diagnosisId", diagnosisId);
         fp.put("reportType", reportType);
-        Long id = commonDAO.selectOne("report.write.findReportId", fp); // 기존 시드 리포트 재사용(진단 무관)
+        Long id = commonDAO.selectOne("report.write.findReportId", fp); // 같은 진단 내 재적재 시에만 재사용(새 진단이면 null → 신규)
         if (id != null) {
-            log.info("[적재] reportType={} → 기존 reportId={} 재사용", reportType, id);
+            log.info("[적재] reportType={} → 같은 진단(diagnosisId={})의 기존 reportId={} 재사용", reportType, diagnosisId, id);
             return id;
         }
         Map<String, Object> h = new HashMap<>();
@@ -125,7 +119,7 @@ public class ReportPersistServiceImpl {
     }
 
     /** CRITERIA + HIGHLIGHT 만 비우고 새로 적재(MARKET 보존). 반환=기준역량 건수. */
-    private int saveCriteria(long reportId, Map<String, Map<String, Double>> groups) throws Exception {
+    private int saveCriteria(long reportId, Map<String, Map<String, CompetencyEval>> groups) throws Exception {
         Map<String, Object> dp = new HashMap<>();
         dp.put("reportId", reportId);
         dp.put("types", AI_TYPES);
@@ -134,29 +128,32 @@ public class ReportPersistServiceImpl {
         log.info("[적재] 기존 CRITERIA/HIGHLIGHT 삭제 → sources {}행, competency {}행 (reportId={})",
                 delSrc, delComp, reportId);
 
-        int order = 10, count = 0;
+        int order = 10, count = 0, srcCount = 0;
         List<String[]> ranked = new ArrayList<>(); // [name, score100]
-        for (Map.Entry<String, Map<String, Double>> g : groups.entrySet()) {
+        for (Map.Entry<String, Map<String, CompetencyEval>> g : groups.entrySet()) {
             String groupCode = stripActivity(g.getKey());
             if (g.getValue() == null) continue;
-            for (Map.Entry<String, Double> e : g.getValue().entrySet()) {
-                if (e.getValue() == null) continue;
-                int s100 = toHundred(e.getValue());
+            for (Map.Entry<String, CompetencyEval> e : g.getValue().entrySet()) {
+                CompetencyEval ce = e.getValue();
+                if (ce == null) continue;
+                int s100 = toHundred(ce.getScore());
                 Map<String, Object> r = new HashMap<>();
                 r.put("fitType", "CRITERIA");
                 r.put("groupCode", groupCode);
                 r.put("name", e.getKey());
                 r.put("myScore", s100);
+                r.put("comment", ce.getReason());   // AI 근거(reason) → 역량별 해설(comment)
                 r.put("sortOrder", order++);
                 Map<String, Object> ip = new HashMap<>();
                 ip.put("reportId", reportId);
                 ip.put("c", r);
-                commonDAO.insert("report.write.insertCompetency", ip);
+                commonDAO.insert("report.write.insertCompetency", ip);   // useGeneratedKeys → r.competencyId 채워짐
+                srcCount += saveSources(r.get("competencyId"), ce.getSources()); // AI 출처(sources) 적재
                 ranked.add(new String[]{e.getKey(), String.valueOf(s100)});
                 count++;
             }
         }
-        log.info("[적재] CRITERIA 역량 INSERT {}건 (reportId={})", count, reportId);
+        log.info("[적재] CRITERIA 역량 INSERT {}건, 근거출처 {}건 (reportId={})", count, srcCount, reportId);
 
         // 강점 TOP3(높은 점수) / 보완 TOP3(낮은 점수) — required/comment/근거는 비움
         ranked.sort((a, b) -> Integer.compare(Integer.parseInt(b[1]), Integer.parseInt(a[1])));
@@ -182,6 +179,31 @@ public class ReportPersistServiceImpl {
         // CFI — AI 역량 점수/강점·보완에서 파생(시드 아님). 점수=평균, 배지·요약=강점/보완 TOP.
         deriveCfi(reportId, ranked, strengthNames, gapNames);
         return count;
+    }
+
+    /** 역량 근거 출처(AI sources) 적재. 첫 출처를 대표(is_primary=1)로. 반환=적재 건수. */
+    private int saveSources(Object competencyId, List<String[]> sources) throws Exception {
+        if (competencyId == null || sources == null || sources.isEmpty()) return 0;
+        long cid = ((Number) competencyId).longValue();
+        int n = 0;
+        for (String[] s : sources) {
+            if (s == null || s.length < 2 || s[1] == null || s[1].trim().isEmpty()) continue;
+            Map<String, Object> sp = new HashMap<>();
+            sp.put("competencyId", cid);
+            sp.put("sourceType", trunc(s[0], 50));    // VARCHAR(50)
+            sp.put("detail", trunc(s[1], 255));       // VARCHAR(255)
+            sp.put("isPrimary", n == 0 ? 1 : 0);
+            commonDAO.insert("report.write.insertCompetencySource", sp);
+            n++;
+        }
+        return n;
+    }
+
+    /** 컬럼 길이 초과 방지용 트림/절단. */
+    private static String trunc(String s, int max) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.length() <= max ? t : t.substring(0, max);
     }
 
     /** CFI(점수/제목/요약/배지)를 AI 역량 결과에서 파생해 upsert. */

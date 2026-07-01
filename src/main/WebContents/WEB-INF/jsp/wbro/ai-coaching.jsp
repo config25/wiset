@@ -86,7 +86,18 @@
     graduation:'<path d="M3 9l9-4 9 4-9 4-9-4z"/><path d="M7 11v4.5c0 1.1 2.2 2 5 2s5-.9 5-2V11"/><path d="M21 9v5"/>',
     users:'<circle cx="9" cy="8" r="3.4"/><path d="M3.5 19a5.5 5.5 0 0111 0"/><path d="M16 5.2a3.4 3.4 0 010 6.4M17.5 13.4A5.5 5.5 0 0121 18.5"/>',
     trending:'<path d="M3 17l6-6 4 4 8-8"/><path d="M16 7h5v5"/>',
-    trophy:'<path d="M7 4h10v4a5 5 0 01-10 0V4z"/><path d="M7 6H4.5a2.5 2.5 0 002.5 2.5M17 6h2.5A2.5 2.5 0 0117 8.5"/><path d="M10 13.5V17M14 13.5V17M8.5 21h7M9.5 21v-1.5a2.5 2.5 0 015 0V21"/>'
+    trophy:'<path d="M7 4h10v4a5 5 0 01-10 0V4z"/><path d="M7 6H4.5a2.5 2.5 0 002.5 2.5M17 6h2.5A2.5 2.5 0 0117 8.5"/><path d="M10 13.5V17M14 13.5V17M8.5 21h7M9.5 21v-1.5a2.5 2.5 0 015 0V21"/>',
+    // ↓ 업종/직무별 배너 아이콘 매핑(composeBanner)에서 쓰는 아이콘 — icon-ds.tag 경로 이식
+    briefcase:'<rect x="3" y="7.5" width="18" height="12" rx="2"/><path d="M8.5 7.5V6a2 2 0 012-2h3a2 2 0 012 2v1.5M3 13h18"/>',
+    chart:'<path d="M4 20h16"/><rect x="6" y="11" width="3.2" height="6" rx="1"/><rect x="11.4" y="6" width="3.2" height="11" rx="1"/><rect x="16.8" y="13" width="3.2" height="4" rx="1"/>',
+    target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.3"/>',
+    zap:'<path d="M13 3L5 13h6l-1 8 8-10h-6l1-8z"/>',
+    pen:'<path d="M16.5 4.5l3 3L8 19l-4 1 1-4L16.5 4.5z"/>',
+    plane:'<path d="M10.5 13.5L3 11l1-2 6.5 1L15 5.5a2 2 0 012.8 2.8L13 13l1 6.5-2 1-2.5-7z"/>',
+    chat:'<path d="M20.5 12a7.5 7.5 0 01-10.8 6.7L4 20.5l1.8-5.7A7.5 7.5 0 1120.5 12z"/>',
+    rocket:'<path d="M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2"/><path d="M9 12c.8 2 2 3.2 4 4l3.5-3.5C19 9 19.5 5 19.5 4.5 19 4.5 15 5 11.5 8.5L8 12z"/><circle cx="14.5" cy="9.5" r="1.4"/>',
+    home:'<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/>',
+    search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>'
   };
   function icon(name,size,color){ return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="'+color+'" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">'+(ICONS[name]||'')+'</svg>'; }
 

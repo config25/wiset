@@ -65,7 +65,7 @@ class ReportGenerationServiceImplTest {
     ReportGenerationServiceImpl sut;       // sut = System Under Test(검증 대상)
 
     @Captor ArgumentCaptor<String> coachingTextCaptor;                       // persist 로 넘어간 코칭 본문 포획
-    @Captor ArgumentCaptor<Map<String, Map<String, Double>>> groupsCaptor;   // persist 로 넘어간 역량 그룹 포획
+    @Captor ArgumentCaptor<Map<String, Map<String, CompetencyEval>>> groupsCaptor;   // persist 로 넘어간 역량 그룹 포획
 
     @BeforeEach
     void setUp() {
@@ -123,22 +123,27 @@ class ReportGenerationServiceImplTest {
     }
 
     @Test
-    void type1_3겹_score객체_형식도_점수를_추출해_적재한다() throws Exception {
+    void type1_3겹_score객체_형식은_점수_근거_출처를_보존해_적재한다() throws Exception {
         // given : 역량평가 응답이 score/reason/sources 를 감싼 3겹 객체(실제 서버 형식, ISSUE-1)
-        //         → score 만 뽑아 {그룹:{역량:점수}} 로 적재되어야 한다
+        //         → 점수뿐 아니라 근거(reason)·출처(sources)까지 CompetencyEval 로 보존되어야 한다
         when(ai.generate(eq("/api/consulting"), any())).thenReturn(resp("코칭 본문"));
         when(ai.generate(eq("/api/competency-eval"), any())).thenReturn(resp(
-                "{\"공통활동\":{\"문제해결\":{\"score\":2.0,\"reason\":\"근거\",\"sources\":[]}}}"));
+                "{\"공통활동\":{\"문제해결\":{\"score\":2.0,\"reason\":\"근거설명\","
+                        + "\"sources\":[{\"type\":\"이력서\",\"detail\":\"프로젝트 3건\"}]}}}"));
         when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
                 .thenReturn(new HashMap<>());
 
         // when
         Map<String, Object> out = sut.generate(nonEmptyInputs());
 
-        // then : 3겹에서 score 추출 → 그룹 적재, 요약 역량 그룹 수 1
+        // then : 3겹에서 score/reason/sources 모두 추출 → 그룹 적재
         verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture());
-        assertThat(groupsCaptor.getValue()).containsKey("공통활동");
-        assertThat(groupsCaptor.getValue().get("공통활동")).containsEntry("문제해결", 2.0);
+        CompetencyEval ce = groupsCaptor.getValue().get("공통활동").get("문제해결");
+        assertThat(ce.getScore()).isEqualTo(2.0);
+        assertThat(ce.getReason()).isEqualTo("근거설명");
+        assertThat(ce.getSources()).hasSize(1);
+        assertThat(ce.getSources().get(0)[0]).isEqualTo("이력서");     // sourceType
+        assertThat(ce.getSources().get(0)[1]).isEqualTo("프로젝트 3건"); // detail
         assertThat(out.get("competencyGroups")).isEqualTo(1);
     }
 

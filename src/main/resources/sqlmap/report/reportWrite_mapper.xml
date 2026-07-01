@@ -3,24 +3,19 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="report.write">
 
-  <select id="findLatestDiagnosisId" resultType="java.lang.Long">
-    SELECT competency_id FROM sys_competency_diagnosis
-    WHERE user_id = #{userSn}
-    ORDER BY competency_id DESC LIMIT 1
-  </select>
-
   <insert id="insertDiagnosis" useGeneratedKeys="true" keyProperty="diagnosisId" keyColumn="competency_id">
     INSERT INTO sys_competency_diagnosis (user_id, diagnosis_type, created_at)
     VALUES (#{userSn}, 'AI_COACHING', CURRENT_TIMESTAMP(6))
   </insert>
 
+  <!-- 같은 진단(diagnosisId) 안에서 타입별 리포트를 찾음. 새 진단이면 매칭 없음 → 새 리포트 INSERT. -->
   <select id="findReportId" resultType="java.lang.Long">
     SELECT report_id FROM sys_ai_report
-    WHERE user_id = #{userSn} AND report_type = #{reportType}
+    WHERE user_id = #{userSn} AND diagnosis_id = #{diagnosisId} AND report_type = #{reportType}
     ORDER BY report_id DESC LIMIT 1
   </select>
 
-  <insert id="FinsertReport" useGeneratedKeys="true" keyProperty="reportId" keyColumn="report_id">
+  <insert id="insertReport" useGeneratedKeys="true" keyProperty="reportId" keyColumn="report_id">
     INSERT INTO sys_ai_report (user_id, diagnosis_id, report_type)
     VALUES (#{userSn}, #{diagnosisId}, #{reportType})
   </insert>
@@ -50,12 +45,18 @@
       <foreach collection="types" item="t" open="(" separator="," close=")">#{t}</foreach>
   </delete>
 
-  <insert id="insertCompetency">
+  <insert id="insertCompetency" useGeneratedKeys="true" keyProperty="c.competencyId" keyColumn="competency_id">
     INSERT INTO sys_report_competency
       (report_id, fit_type, group_code, level_code, name, my_score, required_score, status, icon, comment, sort_order)
     VALUES
       (#{reportId}, #{c.fitType}, #{c.groupCode}, #{c.levelCode}, #{c.name},
        #{c.myScore}, #{c.requiredScore}, #{c.status}, #{c.icon}, #{c.comment}, #{c.sortOrder})
+  </insert>
+
+  <!-- 역량별 근거 출처(AI sources). insertCompetency 로 채워진 competency_id 에 귀속. -->
+  <insert id="insertCompetencySource">
+    INSERT INTO sys_report_competency_source (competency_id, source_type, detail, is_primary)
+    VALUES (#{competencyId}, #{sourceType}, #{detail}, #{isPrimary})
   </insert>
 
   <!-- CFI upsert — AI 역량 점수/강점·보완에서 파생. cfi_delta/market_summary 는 보존(미언급). -->

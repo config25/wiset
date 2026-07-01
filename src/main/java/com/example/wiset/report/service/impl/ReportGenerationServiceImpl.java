@@ -12,8 +12,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -34,9 +36,10 @@ public class ReportGenerationServiceImpl {
     /**
      * [디버그] consulting_log 오염(타 사용자 상담 누적, ISSUE-2) 격리용.
      *   true → 컨설팅 호출 직전 consulting_log 를 강제로 비워 보냄. AI 응답이 달라지면 오염이 원인임이 확정.
-     *   원인 확정·DB 정리 후엔 false 로 되돌리거나 블록 제거.
+     *   ISSUE-2 원인이던 seed-cnsl-real.sql(운영 덤프 9건) 제거 완료 → 격리 불필요하여 off.
+     *   (정상 시드 seed-cnsl-user1.sql 의 익명화 데이터만 AI 입력으로 흐름)
      */
-    private static final boolean DEBUG_CLEAR_CONSULTING_LOG = true;
+    private static final boolean DEBUG_CLEAR_CONSULTING_LOG = false;
 
     private final WisetAiClient ai;
     private final ExecutorService exec;
@@ -94,7 +97,7 @@ public class ReportGenerationServiceImpl {
         GenerateResponse coaching = coachingF.join();
         GenerateResponse eval = evalF.join();
         String coachingText = coaching == null ? null : coaching.getResponse();
-        Map<String, Map<String, Double>> groups = parseCompetency(eval == null ? null : eval.getResponse());
+        Map<String, Map<String, CompetencyEval>> groups = parseCompetency(eval == null ? null : eval.getResponse());
         log.info("[리포트생성] AI 응답 수신 — 병렬 {}ms, 코칭 {}자, 기준역량 {}그룹", elapsedMs,
                 len(coachingText), groups == null ? 0 : groups.size());
 
@@ -152,27 +155,69 @@ public class ReportGenerationServiceImpl {
         String title = indPart + jobPart + goal + "을 준비하시는 회원님, 환영합니다.";
         String subtitle = (industry.isEmpty() ? "" : industry + " ") + (job.isEmpty() ? "" : job + " ") + goal + " 전략";
         StringBuilder kw = new StringBuilder();
-        if (!industry.isEmpty()) kw.append("trending|").append(industry).append(" 산업");
-        if (!job.isEmpty()) kw.append(kw.length() > 0 ? "\n" : "").append("layers|").append(job);
-        kw.append(kw.length() > 0 ? "\n" : "").append("refresh|").append(goal);
+        if (!industry.isEmpty()) kw.append(iconFor(industry, INDUSTRY_ICONS)).append("|").append(industry).append(" 산업");
+        if (!job.isEmpty()) kw.append(kw.length() > 0 ? "\n" : "").append(iconFor(job, JOB_ICONS)).append("|").append(job);
+        kw.append(kw.length() > 0 ? "\n" : "").append(goalIcon(goal)).append("|").append(goal);
         return new String[]{title, subtitle.trim(), kw.toString()};
     }
 
     /**
-     * type1 응답 텍스트(JSON) → {그룹명:{역량명:0~3점}}. 점수 못 뽑으면 null(적재 생략).
-     *   역량값은 두 형식을 모두 허용한다(서버 응답이 점수만 → 객체로 진화):
-     *     2겹: {"공통활동":{"문제해결":2.0}}                       — 점수를 숫자로 직접
-     *     3겹: {"공통활동":{"문제해결":{"score":2.0,"reason":..,"sources":[]}}} — 객체에서 score 추출
-     *   ※ reason·sources 는 현재 적재 스키마(점수만)에 자리가 없어 보존하지 않는다(별도 과제).
+     * 배너 칩 아이콘 매핑 — career-goal.jsp 희망 업종(14)·직무(3) 드롭다운 라벨 기준(sys_common_type INDUSTRY/JOB).
+     *   각 행 = {아이콘, 라벨부분문자열...}, 위에서부터 첫 부분일치 승. 미매칭은 기본 briefcase.
+     * ※ 여기 쓰는 아이콘명은 ai-coaching.jsp 의 JS ICONS 맵에 반드시 등록돼 있어야 렌더됨(미등록 시 빈 SVG).
      */
-    private Map<String, Map<String, Double>> parseCompetency(String responseText) {
+    private static final String[][] INDUSTRY_ICONS = {
+            {"flask",      "생명", "자연과학", "화학", "식품"},  // 생명 및 자연과학, 화학/식품가공
+            {"graduation", "교육"},
+            {"users",      "보건", "의료"},                    // 보건의료
+            {"pen",        "디자인", "방송"},                  // 디자인/방송
+            {"plane",      "운전", "운송"},                    // 운전/운송
+            {"home",       "건축", "토목"},                    // 건축/토목 공학
+            {"layers",     "재료"},
+            {"zap",        "전기", "전자"},                    // 전기/전자
+            {"trending",   "정보통신", "통신"},                // 정보통신
+            {"refresh",    "환경", "에너지", "안전"},           // 환경/에너지/안전
+            {"chart",      "기술영업", "영업", "판매"},          // 기술영업/판매
+            {"briefcase",  "기계"},                            // 기계 (그 외/기타 → 기본 briefcase)
+    };
+    private static final String[][] JOB_ICONS = {
+            {"flask",  "연구개발"},   // 연구개발직
+            {"search", "연구지원"},   // 연구지원직
+            {"zap",    "기술"},       // 기술직
+    };
+
+    /** 텍스트에 표의 키워드가 포함되면 해당 아이콘 반환(위에서부터 첫 매칭). 없으면 기본 briefcase. */
+    private static String iconFor(String text, String[][] table) {
+        if (text != null) {
+            for (String[] row : table) {
+                for (int i = 1; i < row.length; i++) {
+                    if (text.contains(row[i])) return row[0];
+                }
+            }
+        }
+        return "briefcase";
+    }
+
+    /** 목표 → 아이콘. 이직=refresh, 그 외(신규 취업 등)=rocket. */
+    private static String goalIcon(String goal) {
+        return goal != null && goal.contains("이직") ? "refresh" : "rocket";
+    }
+
+    /**
+     * type1 응답 텍스트(JSON) → {그룹명:{역량명:CompetencyEval}}. 점수 못 뽑으면 null(적재 생략).
+     *   역량값은 두 형식을 모두 허용한다(서버 응답이 점수만 → 객체로 진화):
+     *     2겹: {"공통활동":{"문제해결":2.0}}                       — 점수를 숫자로 직접(근거·출처 없음)
+     *     3겹: {"공통활동":{"문제해결":{"score":2.0,"reason":..,"sources":[..]}}} — 점수+근거(reason)+출처(sources) 보존
+     *   근거(reason)→comment, 출처(sources)→sys_report_competency_source 로 적재된다(ISSUE-1 잔여분 반영).
+     */
+    private Map<String, Map<String, CompetencyEval>> parseCompetency(String responseText) {
         if (responseText == null || responseText.trim().isEmpty()) {
             log.warn("[역량파싱] type1 응답이 비어 있음 → 역량 적재 생략(에러 아님)");
             return null;
         }
         try {
             JsonNode root = om.readTree(responseText);
-            Map<String, Map<String, Double>> groups = new LinkedHashMap<>();
+            Map<String, Map<String, CompetencyEval>> groups = new LinkedHashMap<>();
             int totalComp = 0, scored = 0;
             for (Iterator<Map.Entry<String, JsonNode>> git = root.fields(); git.hasNext(); ) {
                 Map.Entry<String, JsonNode> group = git.next();
@@ -181,13 +226,14 @@ public class ReportGenerationServiceImpl {
                             group.getKey(), group.getValue().getNodeType());
                     continue;
                 }
-                Map<String, Double> scores = new LinkedHashMap<>();
+                Map<String, CompetencyEval> scores = new LinkedHashMap<>();
                 for (Iterator<Map.Entry<String, JsonNode>> cit = group.getValue().fields(); cit.hasNext(); ) {
                     Map.Entry<String, JsonNode> comp = cit.next();
                     totalComp++;
-                    Double score = extractScore(comp.getValue());
+                    JsonNode node = comp.getValue();
+                    Double score = extractScore(node);
                     if (score != null) {
-                        scores.put(comp.getKey(), score);
+                        scores.put(comp.getKey(), new CompetencyEval(score, extractReason(node), extractSources(node)));
                         scored++;
                     } else {
                         log.warn("[역량파싱] 역량 '{}.{}' 에서 점수 추출 실패 — 값={} (점수 키명/형식 확인)",
@@ -246,6 +292,63 @@ public class ReportGenerationServiceImpl {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 근거(해설)로 인정하는 키(대소문자 무시). 3겹 객체일 때만 존재. */
+    private static final String[] REASON_KEYS = {"reason", "근거", "comment", "평어", "explanation", "desc"};
+    /** 출처 배열 키 / 출처 원소의 구분·상세 키. */
+    private static final String[] SOURCE_ARRAY_KEYS = {"sources", "source", "출처", "근거출처", "evidence"};
+    private static final String[] SRC_TYPE_KEYS   = {"type", "source_type", "sourceType", "t", "구분", "출처"};
+    private static final String[] SRC_DETAIL_KEYS = {"detail", "d", "text", "내용", "근거", "desc", "value"};
+
+    /** 역량값 노드에서 근거(reason) 추출. 오브젝트가 아니거나 없으면 null. */
+    private static String extractReason(JsonNode v) {
+        if (v == null || !v.isObject()) return null;
+        return firstTextByKeys(v, REASON_KEYS);
+    }
+
+    /**
+     * 역량값 노드에서 근거 출처(sources) 추출 → 각 [sourceType(nullable), detail].
+     *   원소가 문자열이면 detail 로, 오브젝트면 구분/상세 키에서 추출. 없으면 빈 리스트.
+     */
+    private static List<String[]> extractSources(JsonNode v) {
+        List<String[]> out = new ArrayList<>();
+        if (v == null || !v.isObject()) return out;
+        JsonNode arr = firstNodeByKeys(v, SOURCE_ARRAY_KEYS);
+        if (arr == null || !arr.isArray()) return out;
+        for (JsonNode el : arr) {
+            if (el == null || el.isNull()) continue;
+            if (el.isTextual()) {
+                String d = el.asText().trim();
+                if (!d.isEmpty()) out.add(new String[]{null, d});
+            } else if (el.isObject()) {
+                String type = firstTextByKeys(el, SRC_TYPE_KEYS);
+                String detail = firstTextByKeys(el, SRC_DETAIL_KEYS);
+                if (detail == null && type != null) { detail = type; type = null; } // 값이 하나뿐이면 detail 로
+                if (detail != null) out.add(new String[]{type, detail});
+            }
+        }
+        return out;
+    }
+
+    /** 오브젝트에서 keys 중 하나에 해당하는(대소문자 무시) 첫 노드. 없으면 null. */
+    private static JsonNode firstNodeByKeys(JsonNode obj, String[] keys) {
+        for (String k : keys) {
+            for (Iterator<Map.Entry<String, JsonNode>> it = obj.fields(); it.hasNext(); ) {
+                Map.Entry<String, JsonNode> e = it.next();
+                if (e.getKey().equalsIgnoreCase(k)) return e.getValue();
+            }
+        }
+        return null;
+    }
+
+    /** firstNodeByKeys 결과를 텍스트로. 숫자면 문자열화, 그 외/빈값이면 null. */
+    private static String firstTextByKeys(JsonNode obj, String[] keys) {
+        JsonNode n = firstNodeByKeys(obj, keys);
+        if (n == null) return null;
+        if (n.isTextual()) { String s = n.asText().trim(); return s.isEmpty() ? null : s; }
+        if (n.isNumber()) return n.asText();
+        return null;
     }
 
     /** 호출 실패 시 예외로 전체를 죽이지 않고 null 반환(로그만). */
