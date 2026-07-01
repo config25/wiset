@@ -131,7 +131,7 @@ public class ReportInputAssembler {
 
         log.info("before"+industry);
         if("정보통신 관련직".equals(industry)) {
-            industry = "AI 정보보안";
+            industry = "AI_정보보안";
         } else if ("생명 및 자연과학 관련직".equals(industry) || "화학/식품가공 관련직".equals(industry)) {
             industry = "화학바이오";
         } else if ("전기/전자 관련직".equals(industry)) {
@@ -141,7 +141,7 @@ public class ReportInputAssembler {
         }
         log.info("after : "+industry);
 
-        return "[" + (industry == null ? "" : industry) + " " + (job == null ? "" : job) + "]";
+        return "[" + (industry == null ? "" : industry) + " - " + (job == null ? "" : job) + "]";
     }
 
     private String buildProfile(Integer persona, String empType, String industry, String job, String concern,
