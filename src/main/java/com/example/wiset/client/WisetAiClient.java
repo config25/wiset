@@ -2,6 +2,7 @@ package com.example.wiset.client;
 
 import com.example.wiset.dto.ai.GenerateRequest;
 import com.example.wiset.dto.ai.GenerateResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -24,6 +25,7 @@ import org.springframework.web.client.RestTemplate;
 public class WisetAiClient {
 
     private static final Logger log = LoggerFactory.getLogger(WisetAiClient.class);
+    private static final ObjectMapper OM = new ObjectMapper();
 
     private final RestTemplate rt;
     private final String baseUrl;
@@ -42,6 +44,16 @@ public class WisetAiClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         log.info("[AI호출] POST {}{} (maxTokens={})", baseUrl, path, req.getMaxNewTokens());
+        // 요청 프롬프트 원문 로깅(실제 전송되는 JSON 바디 — @JsonInclude(NON_NULL)·snake_case 직렬화 그대로). 길면 8000자에서 절단.
+        try {
+            String reqBody = OM.writeValueAsString(req);
+            log.info("\n========================= [AI프롬프트원문 {}] =========================\n{}\n========================================================================",
+                    path, reqBody +"//총" + reqBody.length() + "자");
+            log.info("unstructured_data 길이: {}자",
+                    req.getUnstructuredData() == null ? 0 : req.getUnstructuredData().length());
+        } catch (Exception e) {
+            log.warn("[AI프롬프트원문 {}] 직렬화 실패 — {}", path, e.toString());
+        }
         long t0 = System.currentTimeMillis();
         GenerateResponse resp = rt.exchange(baseUrl + path, HttpMethod.POST,
                 new HttpEntity<>(req, headers), GenerateResponse.class).getBody();
@@ -51,8 +63,8 @@ public class WisetAiClient {
         // 응답 원문 로깅(답변 형식 확인용 — 역량 JSON·근거·시장정합도 구조 파악). 길면 8000자에서 절단.
         if (resp != null && resp.getResponse() != null) {
             String body = resp.getResponse();
-            log.info("[AI응답원문 {}]\n{}", path,
-                    body.length() > 8000 ? body.substring(0, 8000) + "…(이하 생략, 총 " + body.length() + "자)" : body);
+            log.info("\n========================= [AI응답원문 {}] =========================\n{}\n========================================================================",
+                    path, body.length() > 8000 ? body.substring(0, 8000) + "…(이하 생략, 총 " + body.length() + "자)" : body);
         }
         return resp;
     }

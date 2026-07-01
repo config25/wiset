@@ -14,6 +14,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="${ctx}/css/wb-ds.css">
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"
+          integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a"
+          crossorigin="anonymous"></script>
+  <style>
+    /* AI 본문(HTML) 직접 렌더 시 섹션 서식 — renderReport 인라인 스타일과 동일 톤 */
+    #content > h2 { font-size:21px; font-weight:700; color:var(--ink); letter-spacing:-0.02em; line-height:1.4; margin:40px 0 16px; padding-top:32px; border-top:1px solid var(--line); }
+    #content > h2:first-child { margin-top:0; padding-top:0; border-top:0; }
+    #content > h3 { font-size:15px; font-weight:700; color:var(--accent,#0F7C8C); margin:20px 0 7px; }
+    #content p  { font-size:15px; line-height:1.9; color:var(--ink-700); margin:0 0 14px; }
+    #content ul { margin:0 0 14px; padding-left:20px; }
+    #content li { font-size:15px; line-height:1.9; color:var(--ink-700); margin:0 0 6px; }
+    #content b, #content strong { color:var(--ink); }
+  </style>
 </head>
 <body class="wb-canvas">
 <div class="wb wb-frame">
@@ -230,6 +243,16 @@
     '</div>';
   }
 
+  // AI 본문이 이미 HTML(<h2>·<p> 등)이면 서식 태그를 살려 그대로 렌더.
+  // 외부 AI(신뢰 경계 밖) 출력이라 DOMPurify 로 sanitize 후 주입(XSS 방지). 라이브러리 미로딩 시 원문 폴백.
+  function renderHtml(d, raw){
+    document.getElementById('subtitle').textContent = d.subtitle;
+    renderBanner(d);
+    var el = document.getElementById('content');
+    el.style.setProperty('--accent', d.accent);
+    el.innerHTML = (window.DOMPurify ? DOMPurify.sanitize(raw) : raw);
+  }
+
   // 통짜 TEXT 본문 → 간단 서식 규칙으로 구조 복원(원래 섹션 디자인 재현).
   //   "숫자." 단독 줄 = 섹션 번호(다음 줄이 제목) / "숫자. 제목" 인라인 허용,
   //   종결(마침표·다/요 등)로 끝나는 줄 = 문단, 그 외 짧은 줄 = 소제목, 빈 줄 = 블록 구분.
@@ -301,6 +324,17 @@
   document.getElementById('content').innerHTML = html;
   }
 
+  // AI 코칭 본문이 DB 에 없을 때: 하드코딩 가짜 리포트 대신 '정직한 빈 상태' 표시(마스킹 방지).
+  function renderEmpty(d){
+    document.getElementById('subtitle').textContent = d.subtitle || '';
+    renderBanner(d);
+    document.getElementById('content').innerHTML =
+      '<div style="text-align:center; padding:64px 20px;">'+
+        '<div style="font-size:16px; font-weight:700; color:var(--ink); margin-bottom:8px;">아직 생성된 AI 코칭 리포트가 없습니다.</div>'+
+        '<div style="font-size:14px; color:var(--ink-500); line-height:1.7;">분석을 진행하면 AI 코칭 결과가 이 영역에 표시됩니다.<br>(sys_ai_report 에 적재된 AI 답변이 없을 때 나타나는 화면입니다.)</div>'+
+      '</div>';
+  }
+
   // 저장된 리포트(JSON)가 있으면 '내용'만 덮어쓰고 렌더 — 테마(색/그라데이션)는 페르소나 디자인 유지.
   // 리포트 재조회(리포트 보기) 시 동일 디자인 그대로 재현. 저장된 게 없으면 목업(DATA) 폴백.
   var did = qp('diagnosisId');
@@ -325,19 +359,23 @@
         if(c.title)    d.banner.title = c.title;
         if(c.chips)    d.banner.chips = c.chips;
       }
-      renderText(d, bodyText);
+      // HTML 태그가 들어있으면 서식 살려 그대로(sanitize) 렌더, 아니면 통짜 TEXT 서식 복원.
+      if(/<\/?[a-z][\s\S]*?>/i.test(bodyText)) renderHtml(d, bodyText);
+      else renderText(d, bodyText);
       return;
     }
-    if(c){
+    if(c && (c.intro || c.sections)){   // 레거시: 구조화 JSON content 가 실제로 있을 때만 기존 렌더
       if(c.subtitle) d.subtitle = c.subtitle;
       if(c.title)    d.banner.title = c.title;
       if(c.chips)    d.banner.chips = c.chips;
       if(c.intro)    d.intro = c.intro;
       if(c.sections) d.sections = c.sections;
       if('closing' in c) d.closing = c.closing;
+      renderReport(d);
+      return;
     }
-    renderReport(d);
-  }).catch(function(){ renderReport(d); });
+    renderEmpty(d);   // AI content 없음 → 하드코딩 가짜 리포트 금지, 정직한 빈 상태
+  }).catch(function(){ renderEmpty(d); });
 
   // 탭 이동 (persona + diagnosisId 유지 — 특정 진단 리포트 조회 모드 보존)
   var sp=[]; if(persona) sp.push('persona='+encodeURIComponent(persona)); if(did) sp.push('diagnosisId='+encodeURIComponent(did));

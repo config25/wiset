@@ -1,5 +1,7 @@
 package com.example.wiset.report.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
@@ -11,13 +13,18 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class AnalyzingController {
 
+    private static final Logger log = LoggerFactory.getLogger(AnalyzingController.class);
+
     @GetMapping("/analyzing")
     public String analyzing() {
+        log.warn("[분석화면] ⚠ '분석 진행'은 현재 시각 시뮬레이션만 — 이 경로는 /api/report/generate(AI 호출+DB UPDATE)를 "
+                + "호출하지 않습니다. → AI 최신 답변이 DB에 반영되려면 분석 시작 시 /api/report/generate 를 호출해야 함(현재 누락).");
         return "analyzing"; // -> /WEB-INF/views/analyzing.jsp
     }
 
     @GetMapping("/analysis-complete")
     public String analysisComplete() {
+        log.info("[분석화면] 분석 완료 화면 → 리포트 본문은 /api/ai-coaching/report 로 DB에서 '조회'만 함(생성 아님)");
         return "analysis-complete"; // -> /WEB-INF/views/analysis-complete.jsp (07b)
     }
 }
