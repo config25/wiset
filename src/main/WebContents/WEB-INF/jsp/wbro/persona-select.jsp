@@ -15,7 +15,8 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="${ctx}/css/wb-ds.css">
   <style>
-    .persona-card { cursor: pointer; outline: 3px solid transparent; outline-offset: 3px; }
+    /* hover 하이라이트 지연 방지: box-shadow(무거운 repaint)는 즉시 적용, 뜨는 효과(transform)만 트랜지션 */
+    .persona-card { cursor: pointer; outline: 3px solid transparent; outline-offset: 3px; transition: transform .15s ease-out; }
     .persona-card.is-selected { outline-color: var(--brand); transform: translateY(-4px); }
     .persona-card .persona-label::after { content: '선택하기'; }
     .persona-card.is-selected .persona-label::after { content: '선택됨'; }
