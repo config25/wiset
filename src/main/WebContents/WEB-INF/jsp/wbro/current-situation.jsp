@@ -592,7 +592,7 @@
       ue.querySelector('[data-addurl]').addEventListener('click', function(){ urls.push({url:''}); ru(); });
     }
     function rf(){
-      fe.innerHTML='<button class="wb-addslot" data-addfile>파일 추가하기 '+svg(P.plus,15,'#6A4C9C')+'</button>';
+      fe.innerHTML='<button class="wb-addslot" data-addfile>파일 추가하기 <span class="caption" style="color:var(--ink-400); font-weight:400;">(최대 20MB)</span> '+svg(P.plus,15,'#6A4C9C')+'</button>';
       if(!files.length){ var em=document.createElement('div'); em.className='caption'; em.style.cssText='color:var(--ink-400); padding:6px 4px;'; em.textContent='첨부된 파일이 없습니다.'; fe.appendChild(em); }
       files.forEach(function(f,i){
         var d=document.createElement('div'); d.style.cssText='display:flex; align-items:center; gap:8px; padding:10px 4px;';
