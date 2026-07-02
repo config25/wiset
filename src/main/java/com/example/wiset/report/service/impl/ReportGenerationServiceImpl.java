@@ -85,28 +85,70 @@ public class ReportGenerationServiceImpl {
         GenerateRequest evalReq =
                 GenerateRequest.competencyEval(in.getTargetRole(), in.getResumeText());
 
-        log.info("[리포트생성] AI 병렬 호출 시작 (type0 컨설팅 + type1 역량평가)");
+        // 시장정합도/JD 매칭 — 스크랩 공고별 market-fit. experience_level 은 필수라 미지정 시 '신입'.
+        String expLevel = blank(in.getExperienceLevel()) ? "신입" : in.getExperienceLevel();
+        List<Map<String, Object>> jobScraps = in.getJobScraps();
+        int jdCount = jobScraps == null ? 0 : jobScraps.size();
+
+        log.info("[리포트생성] AI 호출 시작 — 동시 2개씩 처리 (컨설팅 + 역량평가 + 시장정합도 {}건)", jdCount);
         long t0 = System.currentTimeMillis();
         CompletableFuture<GenerateResponse> coachingF =
                 CompletableFuture.supplyAsync(safe(() -> ai.generate("/api/consulting", consultingReq), "consulting"), exec);
         CompletableFuture<GenerateResponse> evalF =
                 CompletableFuture.supplyAsync(safe(() -> ai.generate("/api/competency-eval", evalReq), "competency-eval"), exec);
-        CompletableFuture.allOf(coachingF, evalF).join();
+        List<CompletableFuture<Map<String, Object>>> marketFs = new ArrayList<>();
+        if (jobScraps != null) {
+            for (Map<String, Object> jd : jobScraps) {
+                String jobText = str(jd.get("jobPostingText"));
+                if (jobText == null || jobText.trim().isEmpty()) continue;
+                final Map<String, Object> jdf = jd;
+                GenerateRequest mfReq = GenerateRequest.marketFit(jobText, in.getResumeText(), expLevel);
+                marketFs.add(CompletableFuture
+                        .supplyAsync(safe(() -> ai.generate("/api/market-fit", mfReq), "market-fit"), exec)
+                        .thenApply(resp -> parseMarketFit(jdf, resp == null ? null : resp.getResponse())));
+            }
+        }
+        List<CompletableFuture<?>> all = new ArrayList<>();
+        all.add(coachingF);
+        all.add(evalF);
+        all.addAll(marketFs);
+
+        // 진행률 로그 — 각 호출 완료 시 (n/전체)·경과초를 한 줄로. 거대한 프롬프트/응답 덤프와 분리해 흐름 추적용("[진행]" grep).
+        final int totalCalls = all.size();
+        final java.util.concurrent.atomic.AtomicInteger doneCalls = new java.util.concurrent.atomic.AtomicInteger();
+        log.info("[진행] ▶ AI 호출 {}개 시작 (컨설팅 + 역량평가 + 시장정합도 {}건) — 이 서버는 호출당 수십초~수분 걸립니다", totalCalls, marketFs.size());
+        coachingF.whenComplete((r, e) -> log.info("[진행] ✔ {}/{} 컨설팅(코칭) {} · 경과 {}초",
+                doneCalls.incrementAndGet(), totalCalls, r != null && r.getResponse() != null ? "완료" : "응답없음", (System.currentTimeMillis() - t0) / 1000));
+        evalF.whenComplete((r, e) -> log.info("[진행] ✔ {}/{} 역량평가 {} · 경과 {}초",
+                doneCalls.incrementAndGet(), totalCalls, r != null && r.getResponse() != null ? "완료" : "응답없음", (System.currentTimeMillis() - t0) / 1000));
+        for (int mi = 0; mi < marketFs.size(); mi++) {
+            final int idx = mi + 1;
+            marketFs.get(mi).whenComplete((r, e) -> log.info("[진행] ✔ {}/{} 시장정합도#{} {} · 경과 {}초",
+                    doneCalls.incrementAndGet(), totalCalls, idx, r != null ? "완료" : "스킵/실패", (System.currentTimeMillis() - t0) / 1000));
+        }
+
+        CompletableFuture.allOf(all.toArray(new CompletableFuture[0])).join();
         long elapsedMs = System.currentTimeMillis() - t0;
+        log.info("[진행] ▣ AI 전체 완료 ({}/{}) · 총 {}초 → DB 적재 시작", doneCalls.get(), totalCalls, elapsedMs / 1000);
 
         GenerateResponse coaching = coachingF.join();
         GenerateResponse eval = evalF.join();
         String coachingText = coaching == null ? null : coaching.getResponse();
         Map<String, Map<String, CompetencyEval>> groups = parseCompetency(eval == null ? null : eval.getResponse());
-        log.info("[리포트생성] AI 응답 수신 — 병렬 {}ms, 코칭 {}자, 기준역량 {}그룹", elapsedMs,
-                len(coachingText), groups == null ? 0 : groups.size());
+        List<Map<String, Object>> marketResults = new ArrayList<>();
+        for (CompletableFuture<Map<String, Object>> f : marketFs) {
+            Map<String, Object> r = f.join();
+            if (r != null) marketResults.add(r);
+        }
+        log.info("[리포트생성] AI 응답 수신 — 병렬 {}ms, 코칭 {}자, 기준역량 {}그룹, 시장정합도 {}건", elapsedMs,
+                len(coachingText), groups == null ? 0 : groups.size(), marketResults.size());
 
         String[] banner = composeBanner(in.getTargetRole(), in.getExperienceLevel());
         log.info("[리포트생성] DB 적재 시작 — persist 호출 (코칭 {}자, 역량그룹 {}개)",
                 len(coachingText), groups == null ? 0 : groups.size());
         Map<String, Object> persisted;
         try {
-            persisted = persistService.persist(userSn, coachingText, banner[0], banner[1], banner[2], groups);
+            persisted = persistService.persist(userSn, coachingText, banner[0], banner[1], banner[2], groups, marketResults);
             log.info("[리포트생성] ✅ DB 적재 성공 → {}", persisted);
         } catch (Exception e) {
             log.error("[리포트생성] ❌ DB 적재 실패 — 트랜잭션 롤백됨: {}", e.toString(), e);
@@ -135,6 +177,75 @@ public class ReportGenerationServiceImpl {
 
     private static int len(String s) { return s == null ? 0 : s.length(); }
 
+    private static String str(Object o) { return o == null ? null : String.valueOf(o); }
+
+    /**
+     * market-fit 응답(JSON) → JD 매칭·시장정합도 적재용 Map. 실패 시 null(해당 공고만 스킵).
+     *   반환: {jobPostingId, company, role, meta, fitRate(int), areas:{Knowledge|Skill|Attitude:[{name,score100,scoreRaw,reason,sources[]}]}}
+     */
+    private Map<String, Object> parseMarketFit(Map<String, Object> jd, String responseText) {
+        if (responseText == null || responseText.trim().isEmpty()) {
+            log.warn("[시장정합도] 응답 비어 있음 → 이 공고 스킵 (jobPostingId={})", jd.get("jobPostingId"));
+            return null;
+        }
+        try {
+            JsonNode root = om.readTree(responseText);
+            JsonNode ev = root.path("evaluation");
+            Map<String, List<Map<String, Object>>> areas = new LinkedHashMap<>();
+            areas.put("Knowledge", parseReqs(ev.path("knowledge")));
+            areas.put("Skill", parseReqs(ev.path("skill")));
+            areas.put("Attitude", parseReqs(ev.path("attitude")));
+            int reqTotal = areas.get("Knowledge").size() + areas.get("Skill").size() + areas.get("Attitude").size();
+            if (reqTotal == 0) {
+                log.warn("[시장정합도] 요구역량 0건 파싱 → 스킵 (jobPostingId={}, 응답={})", jd.get("jobPostingId"), responseText);
+                return null;
+            }
+            double mfs = root.path("market_fit_score").asDouble(Double.NaN);
+            int fitRate = Double.isNaN(mfs) ? avgScore100(areas) : (int) Math.round(mfs);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("jobPostingId", jd.get("jobPostingId"));
+            out.put("company", jd.get("company"));
+            out.put("role", jd.get("role"));
+            out.put("meta", jd.get("meta"));
+            out.put("fitRate", fitRate);
+            out.put("areas", areas);
+            return out;
+        } catch (Exception e) {
+            log.warn("[시장정합도] JSON 파싱 실패 → 스킵 (jobPostingId={}). 응답: {}", jd.get("jobPostingId"), responseText, e);
+            return null;
+        }
+    }
+
+    /** evaluation.&lt;area&gt; 배열 → [{name, scoreRaw(0~3), score100, reason, sources[]}]. */
+    private static List<Map<String, Object>> parseReqs(JsonNode arr) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        if (arr != null && arr.isArray()) {
+            for (JsonNode n : arr) {
+                String name = n.path("requirement").asText(null);
+                if (name == null || name.trim().isEmpty()) continue;
+                double raw = n.path("score").asDouble(0);   // 0~3
+                List<String> sources = new ArrayList<>();
+                JsonNode src = n.path("sources");
+                if (src.isArray()) for (JsonNode s : src) { String v = s.asText(null); if (v != null && !v.trim().isEmpty()) sources.add(v.trim()); }
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("name", name.trim());
+                m.put("scoreRaw", raw);
+                m.put("score100", (int) Math.round(raw / 3.0 * 100));
+                m.put("reason", n.path("reason").asText(null));
+                m.put("sources", sources);
+                list.add(m);
+            }
+        }
+        return list;
+    }
+
+    /** 요구역량 평균 score100 (market_fit_score 누락 시 폴백). */
+    private static int avgScore100(Map<String, List<Map<String, Object>>> areas) {
+        int sum = 0, n = 0;
+        for (List<Map<String, Object>> l : areas.values()) for (Map<String, Object> q : l) { sum += (Integer) q.get("score100"); n++; }
+        return n == 0 ? 0 : Math.round((float) sum / n);
+    }
+
     /**
      * 코칭 배너(제목/부제목/키워드) 조립 — 프로필 기반(AI 아님). targetRole="[업종 - 직무]", expLevel=신입/경력.
      * 반환 [title, subtitle, keywords(줄바꿈 아이콘|라벨)]. 정보 없으면 해당 값 null.
@@ -150,40 +261,56 @@ public class ReportGenerationServiceImpl {
         if (industry.isEmpty() && job.isEmpty()) return new String[]{null, null, null};
 
         String goal = "경력".equals(expLevel) ? "이직" : "신규 취업"; // 신입/미상 → 신규 취업
-        String indPart = industry.isEmpty() ? "" : industry + " 산업 ";
+        // 희망 업종(14개 관련직) → 배너 대분류(4개: AI 정보보안/화학바이오/반도체/일반산업)로 묶어 표시.
+        String[] sector = sectorOf(industry);           // {대분류명, 아이콘}
+        String secName = industry.isEmpty() ? "" : sector[0];
+        String indPart = secName.isEmpty() ? "" : withIndustrySuffix(secName) + " ";
         String jobPart = job.isEmpty() ? "" : job + " 직무로 ";
         String title = indPart + jobPart + goal + "을 준비하시는 회원님, 환영합니다.";
-        String subtitle = (industry.isEmpty() ? "" : industry + " ") + (job.isEmpty() ? "" : job + " ") + goal + " 전략";
+        String subtitle = (secName.isEmpty() ? "" : secName + " ") + (job.isEmpty() ? "" : job + " ") + goal + " 전략";
         StringBuilder kw = new StringBuilder();
-        if (!industry.isEmpty()) kw.append(iconFor(industry, INDUSTRY_ICONS)).append("|").append(industry).append(" 산업");
+        if (!secName.isEmpty()) kw.append(sector[1]).append("|").append(withIndustrySuffix(secName));
         if (!job.isEmpty()) kw.append(kw.length() > 0 ? "\n" : "").append(iconFor(job, JOB_ICONS)).append("|").append(job);
         kw.append(kw.length() > 0 ? "\n" : "").append(goalIcon(goal)).append("|").append(goal);
         return new String[]{title, subtitle.trim(), kw.toString()};
     }
 
     /**
-     * 배너 칩 아이콘 매핑 — career-goal.jsp 희망 업종(14)·직무(3) 드롭다운 라벨 기준(sys_common_type INDUSTRY/JOB).
-     *   각 행 = {아이콘, 라벨부분문자열...}, 위에서부터 첫 부분일치 승. 미매칭은 기본 briefcase.
-     * ※ 여기 쓰는 아이콘명은 ai-coaching.jsp 의 JS ICONS 맵에 반드시 등록돼 있어야 렌더됨(미등록 시 빈 SVG).
+     * 희망 업종(career-goal.jsp 14개 "관련직") → 배너 대분류(4개) 매핑.
+     *   실장님 지정 구분: AI 정보보안 / 화학바이오 / 반도체 / 일반산업(그 외 전부).
+     *   각 행 = {대분류명, 아이콘, 관련직 부분문자열...}, 위에서부터 첫 부분일치 승. 미매칭은 일반산업.
+     * ※ 아이콘명은 ai-coaching.jsp 의 JS ICONS 맵에 등록돼 있어야 렌더됨(미등록 시 빈 SVG).
      */
-    private static final String[][] INDUSTRY_ICONS = {
-            {"flask",      "생명", "자연과학", "화학", "식품"},  // 생명 및 자연과학, 화학/식품가공
-            {"graduation", "교육"},
-            {"users",      "보건", "의료"},                    // 보건의료
-            {"pen",        "디자인", "방송"},                  // 디자인/방송
-            {"plane",      "운전", "운송"},                    // 운전/운송
-            {"home",       "건축", "토목"},                    // 건축/토목 공학
-            {"layers",     "재료"},
-            {"zap",        "전기", "전자"},                    // 전기/전자
-            {"trending",   "정보통신", "통신"},                // 정보통신
-            {"refresh",    "환경", "에너지", "안전"},           // 환경/에너지/안전
-            {"chart",      "기술영업", "영업", "판매"},          // 기술영업/판매
-            {"briefcase",  "기계"},                            // 기계 (그 외/기타 → 기본 briefcase)
+    private static final String[][] SECTORS = {
+            // 키워드는 career-goal 원본 라벨(정보통신 관련직 등) + buildTargetRole 이 미리 바꾼 코드(AI_정보보안 등) 둘 다 잡는다.
+            {"AI 정보보안", "shield", "정보통신", "정보보안"},                    // 정보통신 관련직 · "AI_정보보안"
+            {"화학바이오",  "flask",  "생명", "자연과학", "화학", "식품", "바이오"}, // 생명·자연과학 / 화학·식품가공 관련직 · "화학바이오"
+            {"반도체",      "zap",    "전기", "전자", "반도체"},                  // 전기/전자 관련직 · "반도체"
     };
+    // 그 외(교육·보건의료·디자인/방송·운전/운송·건축/토목·기계·재료·환경/에너지/안전·기술영업/판매·기타) → 일반산업
+    private static final String[] DEFAULT_SECTOR = {"일반산업", "doc"};
+
+    /** 관련직 라벨 → {대분류명, 아이콘}. 표의 부분문자열 중 첫 매칭, 없으면 일반산업. */
+    private static String[] sectorOf(String industry) {
+        if (industry != null) {
+            for (String[] row : SECTORS) {
+                for (int i = 2; i < row.length; i++) {
+                    if (industry.contains(row[i])) return new String[]{row[0], row[1]};
+                }
+            }
+        }
+        return DEFAULT_SECTOR;
+    }
+
+    /** 대분류명에 " 산업" 접미사 부여(이미 '산업'으로 끝나면 그대로 — '일반산업 산업' 방지). */
+    private static String withIndustrySuffix(String sector) {
+        return sector.endsWith("산업") ? sector : sector + " 산업";
+    }
+
     private static final String[][] JOB_ICONS = {
-            {"flask",  "연구개발"},   // 연구개발직
-            {"search", "연구지원"},   // 연구지원직
-            {"zap",    "기술"},       // 기술직
+            {"bulb",      "연구개발"},   // 연구개발직 (전구)
+            {"clipboard", "연구지원"},   // 연구지원직 (클립보드)
+            {"layers",    "기술"},       // 기술직 (레이어)
     };
 
     /** 텍스트에 표의 키워드가 포함되면 해당 아이콘 반환(위에서부터 첫 매칭). 없으면 기본 briefcase. */
@@ -198,9 +325,17 @@ public class ReportGenerationServiceImpl {
         return "briefcase";
     }
 
-    /** 목표 → 아이콘. 이직=refresh, 그 외(신규 취업 등)=rocket. */
+    /**
+     * 경력목표 → 강조 칩 아이콘(09 배너 아이콘 매핑 기준).
+     *   경력성장→trending, 재취업→compass, 이직→refresh, 그 외(신규 취업 등)→rocket.
+     */
     private static String goalIcon(String goal) {
-        return goal != null && goal.contains("이직") ? "refresh" : "rocket";
+        if (goal != null) {
+            if (goal.contains("성장"))   return "trending";
+            if (goal.contains("재취업")) return "compass";
+            if (goal.contains("이직"))   return "refresh";
+        }
+        return "rocket";
     }
 
     /**

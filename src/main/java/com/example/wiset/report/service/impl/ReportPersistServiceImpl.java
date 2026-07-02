@@ -47,7 +47,8 @@ public class ReportPersistServiceImpl {
     @Transactional
     public Map<String, Object> persist(long userSn, String coachingText,
                                        String bannerTitle, String bannerSubtitle, String bannerKeywords,
-                                       Map<String, Map<String, CompetencyEval>> groups) throws Exception {
+                                       Map<String, Map<String, CompetencyEval>> groups,
+                                       List<Map<String, Object>> marketResults) throws Exception {
         log.info("[적재] ===== 시작 user={}, 코칭={}자, 역량그룹={}개 =====",
                 userSn, coachingText == null ? 0 : coachingText.length(), groups == null ? 0 : groups.size());
         // 진단할 때마다 새 진단 row 를 남겨 이력 보존. (과거엔 최신 1건을 재사용 → 이전 진단/리포트가 덮여 이력 유실)
@@ -84,15 +85,25 @@ public class ReportPersistServiceImpl {
             log.info("[적재] 코칭 본문 없음 — 건너뜀");
         }
 
-        // 기준정합도(CRITERIA) + 강점/보완 TOP3 + CFI 파생. 새 리포트라 시장정합도(MARKET)/JD 는 아직 없음(AI 재생성 예정).
-        if (groups != null && !groups.isEmpty()) {
+        // 활동분석 리포트 — 기준정합도(CRITERIA)+강점·보완+CFI(type1) / 시장정합도(MARKET)+JD 매칭+시장요약(market-fit).
+        boolean hasGroups = groups != null && !groups.isEmpty();
+        boolean hasMarket = marketResults != null && !marketResults.isEmpty();
+        if (hasGroups || hasMarket) {
             long activityReportId = ensureReport(userSn, diagnosisId, "ACTIVITY_ANALYSIS");
-            int n = saveCriteria(activityReportId, groups);
-            log.info("[적재] 기준정합도 delete-rewrite → reportId={}, 역량 {}개 (MARKET/JD 미적재 — AI 재생성 예정)", activityReportId, n);
             out.put("activityReportId", activityReportId);
-            out.put("criteriaCount", n);
+            if (hasGroups) {
+                int n = saveCriteria(activityReportId, groups);
+                log.info("[적재] 기준정합도 delete-rewrite → reportId={}, 역량 {}개", activityReportId, n);
+                out.put("criteriaCount", n);
+            }
+            if (hasMarket) {
+                int[] mc = saveMarket(activityReportId, marketResults);
+                log.info("[적재] 시장정합도 delete-rewrite → reportId={}, MARKET 역량 {}개, JD 매칭 {}건", activityReportId, mc[0], mc[1]);
+                out.put("marketCount", mc[0]);
+                out.put("jdMatchCount", mc[1]);
+            }
         } else {
-            log.info("[적재] 역량 데이터 없음 — 건너뜀");
+            log.info("[적재] 역량/시장 데이터 없음 — 건너뜀");
         }
         log.info("[적재] ===== 완료 user={} → {} =====", userSn, out);
         return out;
@@ -179,6 +190,156 @@ public class ReportPersistServiceImpl {
         // CFI — AI 역량 점수/강점·보완에서 파생(시드 아님). 점수=평균, 배지·요약=강점/보완 TOP.
         deriveCfi(reportId, ranked, strengthNames, gapNames);
         return count;
+    }
+
+    /**
+     * 시장정합도 적재 — market-fit(스크랩 JD별) 결과를 delete-rewrite.
+     *   - MARKET 역량(ksa): 적합률 최고 공고의 knowledge/skill/attitude 요구를 대표로 적재(+근거출처)
+     *   - JD 매칭 카드: 공고별 1행(적합률/충족·부족역량/추천도)
+     *   - 시장 요약(market_summary): 평균 적합률 + 대표 공고 강점/보완 파생
+     * @return [MARKET 역량 건수, JD 매칭 건수]
+     */
+    @SuppressWarnings("unchecked")
+    private int[] saveMarket(long reportId, List<Map<String, Object>> results) throws Exception {
+        // 기존 MARKET 역량·근거 + JD 매칭 제거
+        Map<String, Object> dp = new HashMap<>();
+        dp.put("reportId", reportId);
+        dp.put("types", Arrays.asList("MARKET"));
+        commonDAO.delete("report.write.deleteCompetencySourcesByTypes", dp);
+        commonDAO.delete("report.write.deleteCompetenciesByTypes", dp);
+        Map<String, Object> jdel = new HashMap<>();
+        jdel.put("reportId", reportId);
+        commonDAO.delete("report.write.deleteJdMatch", jdel);
+
+        // 대표 공고 = 적합률 최고(시장 정합도 KSA 기준). 동률이면 먼저 나온 것.
+        Map<String, Object> rep = null;
+        for (Map<String, Object> r : results) if (rep == null || asInt(r.get("fitRate")) > asInt(rep.get("fitRate"))) rep = r;
+
+        int compCount = 0;
+        if (rep != null) {
+            Map<String, List<Map<String, Object>>> areas = (Map<String, List<Map<String, Object>>>) rep.get("areas");
+            int order = 10;
+            for (Map.Entry<String, List<Map<String, Object>>> a : areas.entrySet()) {
+                if (a.getValue() == null) continue;
+                for (Map<String, Object> req : a.getValue()) {
+                    Map<String, Object> c = new HashMap<>();
+                    c.put("fitType", "MARKET");
+                    c.put("groupCode", a.getKey());          // Knowledge/Skill/Attitude
+                    c.put("name", trunc(str(req.get("name")), 100));
+                    c.put("myScore", req.get("score100"));
+                    c.put("comment", str(req.get("reason")));
+                    c.put("sortOrder", order++);
+                    Map<String, Object> ip = new HashMap<>();
+                    ip.put("reportId", reportId);
+                    ip.put("c", c);
+                    commonDAO.insert("report.write.insertCompetency", ip);
+                    List<String> srcs = (List<String>) req.get("sources");
+                    if (srcs != null) {
+                        int si = 0;
+                        for (String s : srcs) {
+                            if (s == null || s.trim().isEmpty()) continue;
+                            Map<String, Object> sp = new HashMap<>();
+                            sp.put("competencyId", c.get("competencyId"));
+                            sp.put("sourceType", "시장 요구");
+                            sp.put("detail", trunc(s, 255));
+                            sp.put("isPrimary", si == 0 ? 1 : 0);
+                            commonDAO.insert("report.write.insertCompetencySource", sp);
+                            si++;
+                        }
+                    }
+                    compCount++;
+                }
+            }
+        }
+
+        // JD 매칭 카드 — 공고별 1행
+        int jdCount = 0;
+        for (Map<String, Object> r : results) {
+            Map<String, List<Map<String, Object>>> areas = (Map<String, List<Map<String, Object>>>) r.get("areas");
+            List<Map<String, Object>> reqs = new ArrayList<>();
+            if (areas != null) for (List<Map<String, Object>> l : areas.values()) if (l != null) reqs.addAll(l);
+            List<String> strengths = new ArrayList<>(), gaps = new ArrayList<>();
+            int met = 0;
+            for (Map<String, Object> req : reqs) {
+                double raw = asDouble(req.get("scoreRaw"));
+                if (raw >= 2.0) { strengths.add(str(req.get("name"))); met++; }   // 충족(3점 만점 중 2점↑)
+                else gaps.add(str(req.get("name")));                              // 그 외 전부 부족 → 충족+부족=전체 일치
+            }
+            int fit = asInt(r.get("fitRate"));
+            String rec = fit >= 75 ? "추천" : fit >= 60 ? "도전" : "관심";
+            List<String> advices = new ArrayList<>();
+            for (String g : gaps) advices.add(g + " 역량 보완 권장");
+            Map<String, Object> jm = new HashMap<>();
+            jm.put("reportId", reportId);
+            jm.put("jobPostingId", r.get("jobPostingId"));
+            jm.put("company", trunc(str(r.get("company")), 100));
+            jm.put("role", trunc(str(r.get("role")), 150));
+            jm.put("meta", trunc(str(r.get("meta")), 200));
+            jm.put("fitRate", fit);
+            jm.put("matchCount", met + " / " + reqs.size());
+            jm.put("recommendation", rec);
+            jm.put("gapKeywords", joinLines(gaps));
+            jm.put("strengths", joinLines(strengths));
+            jm.put("advices", joinLines(advices));
+            commonDAO.insert("report.write.insertJdMatch", jm);
+            jdCount++;
+        }
+
+        // 시장 요약 파생
+        Map<String, Object> mp = new HashMap<>();
+        mp.put("reportId", reportId);
+        mp.put("marketSummary", deriveMarketSummary(results, rep));
+        commonDAO.update("report.write.updateActivityMarket", mp);
+        return new int[]{compCount, jdCount};
+    }
+
+    /** 시장 요약 — 평균 적합률 + 대표 공고 최고/최저 역량. */
+    @SuppressWarnings("unchecked")
+    private String deriveMarketSummary(List<Map<String, Object>> results, Map<String, Object> rep) {
+        int n = results.size(), sum = 0;
+        for (Map<String, Object> r : results) sum += asInt(r.get("fitRate"));
+        int avg = n > 0 ? Math.round((float) sum / n) : 0;
+        String strong = null, weak = null;
+        if (rep != null) {
+            Map<String, List<Map<String, Object>>> areas = (Map<String, List<Map<String, Object>>>) rep.get("areas");
+            Map<String, Object> hi = null, lo = null;
+            if (areas != null) for (List<Map<String, Object>> l : areas.values()) if (l != null) for (Map<String, Object> q : l) {
+                if (hi == null || asInt(q.get("score100")) > asInt(hi.get("score100"))) hi = q;
+                if (lo == null || asInt(q.get("score100")) < asInt(lo.get("score100"))) lo = q;
+            }
+            if (hi != null) strong = str(hi.get("name"));
+            if (lo != null) weak = str(lo.get("name"));
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("스크랩한 채용공고 ").append(n).append("건 기준 평균 적합률은 <b>").append(avg).append("%</b>입니다.");
+        if (rep != null) sb.append(" 가장 잘 맞는 <b>").append(str(rep.get("role")))
+                .append("</b>(적합률 ").append(asInt(rep.get("fitRate"))).append("%)");
+        if (strong != null) sb.append(" 기준 <b>").append(strong).append("</b> 역량은 충족하나");
+        if (weak != null) sb.append(" <b>").append(weak).append("</b> 영역은 보강이 필요합니다.");
+        else sb.append(".");
+        return sb.toString();
+    }
+
+    private static int asInt(Object o) {
+        if (o == null) return 0;
+        if (o instanceof Number) return ((Number) o).intValue();
+        try { return (int) Math.round(Double.parseDouble(o.toString().trim())); } catch (Exception e) { return 0; }
+    }
+
+    private static double asDouble(Object o) {
+        if (o == null) return 0;
+        if (o instanceof Number) return ((Number) o).doubleValue();
+        try { return Double.parseDouble(o.toString().trim()); } catch (Exception e) { return 0; }
+    }
+
+    private static String str(Object o) { return o == null ? null : String.valueOf(o); }
+
+    /** 목록 → 줄바꿈 구분 TEXT(빈/널 제외). 비면 null. */
+    private static String joinLines(List<String> list) {
+        if (list == null || list.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder();
+        for (String s : list) { if (s == null || s.trim().isEmpty()) continue; sb.append(sb.length() > 0 ? "\n" : "").append(s.trim()); }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     /** 역량 근거 출처(AI sources) 적재. 첫 출처를 대표(is_primary=1)로. 반환=적재 건수. */

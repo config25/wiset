@@ -69,7 +69,7 @@
            advices
     FROM sys_report_jd_match
     WHERE report_id = #{reportId}
-    ORDER BY match_id
+    ORDER BY fit_rate DESC, match_id
   </select>
 
 </mapper>

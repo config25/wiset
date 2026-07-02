@@ -85,6 +85,8 @@ public class ReportInputAssembler {
         List<Map<String, Object>> cnslQna = commonDAO.selectList("indvdl.cnsl.selectCnslQnaListByUser", p);
         in.setConsultingLog(buildConsultingLog(cnslQna, concern));
         in.setExperienceLevel(empType.isEmpty() ? null : empType);
+        // 시장정합도/JD 매칭용 — 스크랩 공고(본문 포함) 최대 3건. 없으면 빈 리스트(→ market-fit 스킵).
+        in.setJobScraps(commonDAO.selectList("mypage.scrap.listScrapsForMatch", p));
         log.info("[입력조립] user={} — 희망={}, 신입경력={}, 이력서 {}자, 자소서 {}자, 근무지 {}, 고용형태 {}, 경력성장 {}, 고민={}",
                 u, in.getTargetRole(), empType.isEmpty() ? "미선택" : empType,
                 resumeText == null ? 0 : resumeText.length(),
@@ -125,6 +127,19 @@ public class ReportInputAssembler {
 
     private String buildTargetRole(String industry, String job) {
         if (industry == null && job == null) return null;
+
+        log.info("before"+industry);
+        if("정보통신 관련직".equals(industry)) {
+            industry = "AI_정보보안";
+        } else if ("생명 및 자연과학 관련직".equals(industry) || "화학/식품가공 관련직".equals(industry)) {
+            industry = "화학바이오";
+        } else if ("전기/전자 관련직".equals(industry)) {
+            industry = "반도체";
+        }else {
+            industry = "일반산업";
+        }
+        log.info("after : "+industry);
+
         return "[" + (industry == null ? "" : industry) + " - " + (job == null ? "" : job) + "]";
     }
 

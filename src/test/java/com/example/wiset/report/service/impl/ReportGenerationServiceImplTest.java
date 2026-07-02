@@ -105,7 +105,7 @@ class ReportGenerationServiceImplTest {
         when(ai.generate(eq("/api/consulting"), any())).thenReturn(resp(html));
         when(ai.generate(eq("/api/competency-eval"), any()))
                 .thenReturn(resp("{\"공통활동\":{\"문제해결\":2.0,\"소통\":3.0}}"));
-        when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
+        when(persistService.persist(anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new HashMap<>());
 
         // when : 리포트 생성 실행
@@ -113,7 +113,7 @@ class ReportGenerationServiceImplTest {
 
         // then : persist 로 넘어간 인자(코칭 본문·역량 그룹)를 붙잡아 검증
         verify(persistService).persist(anyLong(), coachingTextCaptor.capture(),
-                any(), any(), any(), groupsCaptor.capture());
+                any(), any(), any(), groupsCaptor.capture(), any());
 
         assertThat(coachingTextCaptor.getValue()).isEqualTo(html).contains("<h2>"); // 본문 변형 없음
         assertThat(groupsCaptor.getValue()).containsKey("공통활동");                  // type1 정상 파싱
@@ -130,14 +130,14 @@ class ReportGenerationServiceImplTest {
         when(ai.generate(eq("/api/competency-eval"), any())).thenReturn(resp(
                 "{\"공통활동\":{\"문제해결\":{\"score\":2.0,\"reason\":\"근거설명\","
                         + "\"sources\":[{\"type\":\"이력서\",\"detail\":\"프로젝트 3건\"}]}}}"));
-        when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
+        when(persistService.persist(anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new HashMap<>());
 
         // when
         Map<String, Object> out = sut.generate(nonEmptyInputs());
 
         // then : 3겹에서 score/reason/sources 모두 추출 → 그룹 적재
-        verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture());
+        verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture(), any());
         CompetencyEval ce = groupsCaptor.getValue().get("공통활동").get("문제해결");
         assertThat(ce.getScore()).isEqualTo(2.0);
         assertThat(ce.getReason()).isEqualTo("근거설명");
@@ -152,14 +152,14 @@ class ReportGenerationServiceImplTest {
         // given : JSON 도 아닌(점수 추출 불가) 응답 → groups=null 로 적재 생략
         when(ai.generate(eq("/api/consulting"), any())).thenReturn(resp("코칭 본문"));
         when(ai.generate(eq("/api/competency-eval"), any())).thenReturn(resp("형식 깨진 응답"));
-        when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
+        when(persistService.persist(anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new HashMap<>());
 
         // when
         Map<String, Object> out = sut.generate(nonEmptyInputs());
 
         // then : 파싱 불가 → groups=null 로 persist 호출, 요약의 역량 그룹 수는 0
-        verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture());
+        verify(persistService).persist(anyLong(), any(), any(), any(), any(), groupsCaptor.capture(), any());
         assertThat(groupsCaptor.getValue()).isNull();
         assertThat(out.get("competencyGroups")).isEqualTo(0);
     }
@@ -171,7 +171,7 @@ class ReportGenerationServiceImplTest {
                 .thenThrow(new RuntimeException("connect timed out"));
         when(ai.generate(eq("/api/competency-eval"), any()))
                 .thenReturn(resp("{\"공통활동\":{\"문제해결\":2.0}}"));
-        when(persistService.persist(anyLong(), any(), any(), any(), any(), any()))
+        when(persistService.persist(anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new HashMap<>());
 
         // when : 예외가 밖으로 터지지 않고 끝까지 진행되어야 한다

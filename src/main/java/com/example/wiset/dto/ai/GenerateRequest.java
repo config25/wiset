@@ -47,13 +47,14 @@ public class GenerateRequest {
         return r;
     }
 
-    /** /api/market-fit — 시장 정합도. experienceLevel = "신입"|"경력". */
+    /** /api/market-fit — 시장 정합도. experienceLevel = "신입"|"경력". 구조화 채점이라 온도 낮춤(도메인 드리프트 방지). */
     public static GenerateRequest marketFit(String jobPostingText, String resumeText, String experienceLevel) {
         GenerateRequest r = new GenerateRequest();
         r.jobPostingText = jobPostingText;
         r.resumeText = resumeText;
         r.experienceLevel = experienceLevel;
         r.maxNewTokens = 1536;
+        r.temperature = 0.7;
         return r;
     }
 

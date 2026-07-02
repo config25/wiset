@@ -59,6 +59,26 @@
     VALUES (#{competencyId}, #{sourceType}, #{detail}, #{isPrimary})
   </insert>
 
+  <!-- 시장정합도 재적재 시 기존 JD 매칭 제거(delete-rewrite). -->
+  <delete id="deleteJdMatch">
+    DELETE FROM sys_report_jd_match WHERE report_id = #{reportId}
+  </delete>
+
+  <!-- 스크랩 JD × 내 이력 market-fit 결과 1건. -->
+  <insert id="insertJdMatch">
+    INSERT INTO sys_report_jd_match
+      (report_id, job_posting_id, company, role, meta, fit_rate, match_count, recommendation, gap_keywords, strengths, advices)
+    VALUES
+      (#{reportId}, #{jobPostingId}, #{company}, #{role}, #{meta}, #{fitRate}, #{matchCount},
+       #{recommendation}, #{gapKeywords}, #{strengths}, #{advices})
+  </insert>
+
+  <!-- 시장 요약 upsert — CFI upsert 와 같은 행(report_id) 에 market_summary 만 갱신(순서 무관). -->
+  <insert id="updateActivityMarket">
+    INSERT INTO sys_report_activity (report_id, market_summary) VALUES (#{reportId}, #{marketSummary})
+    ON DUPLICATE KEY UPDATE market_summary = VALUES(market_summary)
+  </insert>
+
   <!-- CFI upsert — AI 역량 점수/강점·보완에서 파생. cfi_delta/market_summary 는 보존(미언급). -->
   <insert id="upsertActivityCfi">
     INSERT INTO sys_report_activity (report_id, cfi_score, summary_title, summary_text, keyword_badges, criteria_summary)

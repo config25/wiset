@@ -1,46 +1,44 @@
 package com.example.wiset.report.controller;
 
 import com.example.wiset.dto.ai.GenerationInputs;
-import com.example.wiset.report.service.impl.ReportGenerationServiceImpl;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
+import com.example.wiset.report.service.impl.ReportGenerationJobService;
+import com.example.wiset.support.CurrentUser;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Collections;
-
 /**
- * AI 리포트 생성 API.
- *   현재: 3개 외부 AI API 를 병렬 호출하고 원본 응답을 그대로 반환(응답 스키마 확인용).
- *   입력은 본문(GenerationInputs)으로 직접 전달 — 추후 CurrentUser 기준 DB 자동 조립으로 대체.
+ * AI 리포트 생성 API (비동기).
+ *   외부 AI 추론 서버가 느려 생성이 수 분 걸리므로, 요청은 백그라운드 잡만 띄우고 즉시 반환한다.
+ *   프론트(분석 진행 화면)는 {@code GET /api/report/status} 를 폴링해 완료 여부를 확인한다.
  *
  * [wbridge 포팅 델타] @Controller extends DefaultController · @Resource 주입 · @RequestMapping("/report/*.json") ·
- *   ResponseEntity → ModelMap + return "jsonView" · 요청바디 DTO(GenerationInputs)→Map.
+ *   ResponseEntity → ModelMap + return "jsonView".
  */
 @RestController
 @RequestMapping("/api/report")
 public class ReportGenerationApiController {
 
-    private static final Logger log = LoggerFactory.getLogger(ReportGenerationApiController.class);
+    private final ReportGenerationJobService jobService;
 
-    private final ReportGenerationServiceImpl service;
-
-    public ReportGenerationApiController(ReportGenerationServiceImpl service) {
-        this.service = service;
+    public ReportGenerationApiController(ReportGenerationJobService jobService) {
+        this.jobService = jobService;
     }
 
+    /** 생성 시작(비동기) — 백그라운드 잡을 띄우고 즉시 202 반환. 이미 진행 중이면 중복 시작 생략. */
     @PostMapping("/generate")
     public ResponseEntity<?> generate(@RequestBody(required = false) GenerationInputs in) {
-        try {
-            return ResponseEntity.ok(service.generate(in == null ? new GenerationInputs() : in));
-        } catch (Exception e) {
-            log.error("AI 리포트 생성 실패", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Collections.singletonMap("message", "리포트 생성에 실패했습니다."));
-        }
+        long userSn = CurrentUser.userSn();
+        return ResponseEntity.accepted()
+                .body(jobService.start(userSn, in == null ? new GenerationInputs() : in));
+    }
+
+    /** 생성 진행 상태(프론트 폴링용) — status: idle|running|done|failed. */
+    @GetMapping("/status")
+    public ResponseEntity<?> status() {
+        return ResponseEntity.ok(jobService.status(CurrentUser.userSn()));
     }
 }

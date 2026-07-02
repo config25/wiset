@@ -110,12 +110,26 @@
     document.getElementById('progPct').textContent = v+'%';
   }
 
-  // 실제 AI 리포트 생성 호출 (저장된 입력으로 서버가 자동 조립 → type0/type1 병렬). 느려서(~30초+) 비동기로 띄워두고 진행바와 동기화.
+  // 실제 AI 리포트 생성 — 비동기. /generate 는 백그라운드 잡만 띄우고 즉시 반환하므로(느린 AI 서버로 수 분 소요),
+  // /status 를 짧게 폴링해 실제 완료를 확인한다. (동기 호출 시 수 분 연결 유지 → 브라우저/프록시 타임아웃으로 끊김 방지)
   var genDone = false, genFailed = false, genErr = '';
+  var pollStart = Date.now(), POLL_MAX_MS = 12*60*1000; // 12분 초과 시 포기(직전 데이터로 진행)
   fetch(ctx + '/api/report/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function(){ genDone = true; })
-    .catch(function(e){ genFailed = true; genErr = e.message; console.error('AI 생성 실패', e); });
+    .then(function(){ pollStatus(); })
+    .catch(function(e){ genFailed = true; genErr = e.message; console.error('AI 생성 시작 실패', e); });
+
+  function pollStatus(){
+    if(Date.now() - pollStart > POLL_MAX_MS){ genFailed = true; genErr = 'timeout'; console.warn('생성 폴링 12분 초과 — 직전 데이터로 진행'); return; }
+    fetch(ctx + '/api/report/status')
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(s){
+        if(s && s.status === 'done'){ genDone = true; }
+        else if(s && s.status === 'failed'){ genFailed = true; genErr = s.error || '생성 실패'; }
+        else { setTimeout(pollStatus, 3000); } // running/idle → 계속 폴링
+      })
+      .catch(function(){ setTimeout(pollStatus, 3000); });
+  }
 
   // 단계 진행 — 마지막 단계는 실제 생성이 끝날 때까지 대기
   var idx = 0; state[0] = 'doing'; render(); setProgress(8);

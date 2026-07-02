@@ -23,6 +23,29 @@
     ORDER BY s.RGSDE DESC, s.PBLANC_SN
   </select>
 
+  <!-- 시장정합도/JD 매칭용 — 사용자가 '타깃'으로 지정한 공고만(현황 화면 선택, sys_user_job_scrap.is_target=1).
+       뽑은 개수만큼 market-fit 호출 → 사용자가 개수를 직접 조절(=속도 조절). 폭주 방지 안전상한 5건. -->
+  <select id="listScrapsForMatch" resultType="java.util.LinkedHashMap">
+    SELECT
+      s.PBLANC_SN AS jobPostingId,
+      i.INSTT_NM  AS company,
+      COALESCE(p.PBLANC_NM, s.PBLANC_NM) AS role,
+      CONCAT_WS(' · ', NULLIF(p.ADRES, ''), NULLIF(p.EMPLYM_STLE, '')) AS meta,
+      p.PBLANC_CN AS jobPostingText
+    FROM TN_INDVDL_PBLANC_SCRAP s
+    JOIN sys_user_job_scrap t
+           ON t.indvdl_user_sn = s.INDVDL_USER_SN
+          AND t.instt_user_sn  = s.INSTT_USER_SN
+          AND t.pblanc_sn      = s.PBLANC_SN
+          AND t.is_target = 1
+    LEFT JOIN TN_EMPMN_PBLANC p ON p.PBLANC_SN = s.PBLANC_SN
+    LEFT JOIN TN_INSTT_INFO   i ON i.USER_SN   = s.INSTT_USER_SN
+    WHERE s.INDVDL_USER_SN = #{userSn}
+      AND p.PBLANC_CN IS NOT NULL AND p.PBLANC_CN &lt;&gt; ''
+    ORDER BY s.RGSDE DESC, s.PBLANC_SN
+    LIMIT 5
+  </select>
+
   <!-- 희망 근무지(복수) — 칩 라벨 형태로 반환. 전국/해외는 시도만, 그 외 '시도 시군구'. -->
   <select id="listDesiredRegions" resultType="java.lang.String">
     SELECT CASE WHEN sido IN ('전국', '해외') THEN sido

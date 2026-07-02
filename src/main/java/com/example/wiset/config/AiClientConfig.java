@@ -31,9 +31,14 @@ public class AiClientConfig {
         return new RestTemplate(factory);
     }
 
-    /** 4종 API 동시 호출용. allOf 로 모이므로 코어 4면 충분. */
+    /**
+     * API 호출용 — 코어 2(동시 2개씩).
+     *   외부 AI 추론 서버가 단일 GPU라 동시 요청이 많으면(예: 5개) 서로 굶겨 read-timeout 으로 죽는다.
+     *   반면 동시 2개는 원래 검증된 수준(컨설팅+역량평가 병렬)이라 안전하다 → 겹쳐 돌려 총 시간을 줄인다.
+     *   (5개 호출이 2개씩 처리됨. read-timeout 600s 여유로 최악의 경우에도 타임아웃 안 남)
+     */
     @Bean(name = "aiExecutor", destroyMethod = "shutdown")
     public ExecutorService aiExecutor() {
-        return Executors.newFixedThreadPool(4);
+        return Executors.newFixedThreadPool(2);
     }
 }

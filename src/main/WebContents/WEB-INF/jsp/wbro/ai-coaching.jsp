@@ -89,6 +89,10 @@
     trophy:'<path d="M7 4h10v4a5 5 0 01-10 0V4z"/><path d="M7 6H4.5a2.5 2.5 0 002.5 2.5M17 6h2.5A2.5 2.5 0 0117 8.5"/><path d="M10 13.5V17M14 13.5V17M8.5 21h7M9.5 21v-1.5a2.5 2.5 0 015 0V21"/>',
     // ↓ 업종/직무별 배너 아이콘 매핑(composeBanner)에서 쓰는 아이콘 — icon-ds.tag 경로 이식
     briefcase:'<rect x="3" y="7.5" width="18" height="12" rx="2"/><path d="M8.5 7.5V6a2 2 0 012-2h3a2 2 0 012 2v1.5M3 13h18"/>',
+    doc:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+    bulb:'<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 00-3.8 10.7c.5.4.8 1 .8 1.8v.5h6v-.5c0-.8.3-1.4.8-1.8A6 6 0 0012 3z"/>',
+    clipboard:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4a1 1 0 011-1h4a1 1 0 011 1v1a1 1 0 01-1 1h-4a1 1 0 01-1-1V4z"/><path d="M9 11h6M9 15h4"/>',
+    compass:'<circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1 5.1-2.1z"/>',
     chart:'<path d="M4 20h16"/><rect x="6" y="11" width="3.2" height="6" rx="1"/><rect x="11.4" y="6" width="3.2" height="11" rx="1"/><rect x="16.8" y="13" width="3.2" height="4" rx="1"/>',
     target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.3"/>',
     zap:'<path d="M13 3L5 13h6l-1 8 8-10h-6l1-8z"/>',
@@ -356,7 +360,8 @@
     if(rep){
       if(rep.bannerTitle) d.banner.title = rep.bannerTitle;
       if(rep.subtitle)    d.subtitle     = rep.subtitle;
-      if(rep.chips && rep.chips.length) d.banner.chips = rep.chips;
+      // 큰 배너 아이콘도 업종(첫 칩) 아이콘과 동기화 — 안 하면 페르소나 하드코딩 기본(예: flask)이 남아 내용과 불일치.
+      if(rep.chips && rep.chips.length){ d.banner.chips = rep.chips; if(rep.chips[0] && rep.chips[0].ic) d.banner.icon = rep.chips[0].ic; }
     }
     // 자동 감지: content 가 통짜 문자열이거나 {text:"..."} 형태면 TEXT 모드,
     //            sections 등을 가진 객체면 기존 구조화 렌더. (둘 다 호환)
@@ -368,7 +373,7 @@
       if(c && typeof c === 'object'){
         if(c.subtitle) d.subtitle = c.subtitle;
         if(c.title)    d.banner.title = c.title;
-        if(c.chips)    d.banner.chips = c.chips;
+        if(c.chips)  { d.banner.chips = c.chips; if(c.chips[0] && c.chips[0].ic) d.banner.icon = c.chips[0].ic; }
       }
       // HTML 태그가 들어있으면 서식 살려 그대로(sanitize) 렌더, 아니면 통짜 TEXT 서식 복원.
       if(/<\/?[a-z][\s\S]*?>/i.test(bodyText)) renderHtml(d, bodyText);
@@ -378,7 +383,7 @@
     if(c && (c.intro || c.sections)){   // 레거시: 구조화 JSON content 가 실제로 있을 때만 기존 렌더
       if(c.subtitle) d.subtitle = c.subtitle;
       if(c.title)    d.banner.title = c.title;
-      if(c.chips)    d.banner.chips = c.chips;
+      if(c.chips)  { d.banner.chips = c.chips; if(c.chips[0] && c.chips[0].ic) d.banner.icon = c.chips[0].ic; }
       if(c.intro)    d.intro = c.intro;
       if(c.sections) d.sections = c.sections;
       if('closing' in c) d.closing = c.closing;
