@@ -146,6 +146,10 @@ public class ReportGenerationServiceImpl {
         }
         if (industry.isEmpty() && job.isEmpty()) return new String[]{null, null, null};
 
+        if("AI_정보보안".equals(industry)){
+            industry = "AI·정보보안";
+        }
+
         String goal = "경력".equals(expLevel) ? "이직" : "신규 취업"; // 신입/미상 → 신규 취업
         String indPart = industry.isEmpty() ? "" : industry + " 산업 ";
         String jobPart = job.isEmpty() ? "" : job + " 직무로 ";
