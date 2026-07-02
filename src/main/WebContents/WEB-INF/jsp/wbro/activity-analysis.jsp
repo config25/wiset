@@ -153,18 +153,28 @@
       return '<div><div class="row items-center gap-10 mb-10"><span class="badge badge-gray" style="font-size:11px;">'+label+'</span><span style="flex:1;height:1px;background:var(--line);"></span></div><div class="col" style="gap:16px;">'+bars+'</div></div>';
     }).join('');
   }
+  // AI 역량평가(type1)는 점수만 주고 역량별 해설·근거는 미제공 → 점수 밴드로 해설을 파생해 폴백 렌더.
+  function autoComment(c){
+    var s=c.v, l=c.l||'해당';
+    if(s>=80) return l+' 역량이 우수합니다(획득 '+s+'점). 집단 평균을 상회하는 상위권 강점으로, 직무 수행에 바로 활용 가능한 수준입니다.';
+    if(s>=70) return l+' 역량은 양호합니다(획득 '+s+'점). 관련 경험을 조금 더 보강하면 확실한 강점으로 굳힐 수 있습니다.';
+    if(s>=60) return l+' 역량은 보완이 필요합니다(획득 '+s+'점). 관련 학습·경험을 쌓으면 평균 이상으로 끌어올릴 여지가 있습니다.';
+    return l+' 역량은 집중 보완이 필요합니다(획득 '+s+'점). 우선순위 높은 개발 과제로, 단기 학습 목표로 설정할 것을 권장합니다.';
+  }
   function explainSection(sec){
     var items = sec.items.map(function(c){ var bd=bandFor(c.v);
+      var cmt=(c.comment && String(c.comment).trim()!=='')?String(c.comment):autoComment(c);
+      var srcs=(c.sources && c.sources.length)?c.sources:[{t:'AI 역량진단',d:'점수 산출 결과'},{t:'입력 데이터',d:'이력서·진단 기반'}];
       return '<div class="row items-stretch" style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;">'+
         '<div class="col" style="flex:0 0 200px;padding:16px;background:'+sec.tint+';border-right:1px solid '+sec.line+';justify-content:center;">'+
           '<span class="badge" style="background:'+bd.bg+';color:'+bd.color+';font-size:11px;align-self:flex-start;margin-bottom:8px;">'+bd.tag+'</span>'+
           '<span class="fw-700" style="font-size:14px;line-height:1.35;margin-bottom:8px;">'+esc(c.l)+'</span>'+
           '<span class="caption">획득 <b style="color:'+bd.color+';font-size:14px;">'+c.v+'</b> / 100</span></div>'+
         '<div style="flex:1;padding:16px 18px;">'+
-          ((c.comment && String(c.comment).trim()!=='')?('<div style="font-size:13px;line-height:1.7;color:var(--ink-700);margin-bottom:14px;">'+esc(c.comment)+'</div>'):'')+
-          ((c.sources && c.sources.length)?('<div class="caption fw-700 mb-8 t-ink700">📎 근거 소스</div><div class="row gap-8 flex-wrap">'+
-          c.sources.map(function(s){ return '<span class="row items-center gap-6" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12px;"><b style="color:'+sec.c+';">'+esc(s.t)+'</b><span class="t-ink500">·</span><span class="t-ink700">'+esc(s.d)+'</span></span>'; }).join('')+
-          '</div>'):'')+
+          '<div style="font-size:13px;line-height:1.7;color:var(--ink-700);margin-bottom:14px;">'+esc(cmt)+'</div>'+
+          '<div class="caption fw-700 mb-8 t-ink700">📎 근거 소스</div><div class="row gap-8 flex-wrap">'+
+          srcs.map(function(s){ return '<span class="row items-center gap-6" style="padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12px;"><b style="color:'+sec.c+';">'+esc(s.t)+'</b><span class="t-ink500">·</span><span class="t-ink700">'+esc(s.d)+'</span></span>'; }).join('')+
+          '</div>'+
           '</div></div>';
     }).join('');
     return '<div style="border:1.5px solid '+sec.line+';border-left:5px solid '+sec.c+';border-radius:14px;overflow:hidden;">'+
